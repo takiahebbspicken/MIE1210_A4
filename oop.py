@@ -76,12 +76,12 @@ class Mesh:
         self.x_coordinates = np.cumsum(self.dx[1:-1])
         self.y_coordiantes = np.cumsum(self.dy[1:-1])
         self.column = [int(np.floor(i / self.ygrid)) for i in range(self.num_nodes)]
-        self.vel = np.zeros(((x_points+2)*(y_points+2), 2))
+        self.vel = np.zeros(((x_points + 2) * (y_points + 2), 2))
         self.vel_correction = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        self.pressure = np.zeros(((x_points+2)*(y_points+2), 1))
+        self.pressure = np.zeros(((x_points + 2) * (y_points + 2), 1))
         self.pressure_correction = np.zeros(((x_points + 2) * (y_points + 2), 1))
-        self.vel_face = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        self.vel_face_correction = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        self.vel_face = np.zeros(((x_points + 2) * (y_points + 2), 4))
+        self.vel_face_correction = np.zeros(((x_points + 2) * (y_points + 2), 4))
         self.a_momentum = np.zeros(((x_points + 2) * (y_points + 2), 5))
         self.momentum_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
         self.a_pressure = np.zeros(((x_points + 2) * (y_points + 2), 5))
@@ -89,29 +89,29 @@ class Mesh:
 
     def cell_volumes_areas_deltas(self):
         self.volumes = np.zeros((self.num_nodes, 1))
-        self.areas = np.zeros((self.num_nodes, 2))
+        self.areas = np.zeros((self.num_nodes, 2))  # 0 column is Ay, 1 column is Ax
         for i in range(self.num_nodes):
             if i == 0:  # Bottom left boundary corner
                 self.areas[i, 0] = self.dy[0] + self.dy[1] / 2  # Ay
                 self.areas[i, 1] = self.dx[0] + self.dx[1] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
-            elif i == self.ygrid-1:  # Top left corner boundary
+            elif i == self.ygrid - 1:  # Top left corner boundary
                 self.areas[i, 0] = self.dy[-1] + self.dy[-2] / 2  # Ay
                 self.areas[i, 1] = self.dx[0] + self.dx[1] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
-            elif i == self.ygrid * self.xgrid - self.ygrid:  # Bottom right corner boundary
+            elif i == self.num_nodes - self.ygrid:  # Bottom right corner boundary
                 self.areas[i, 0] = self.dy[0] + self.dy[1] / 2  # Ay
                 self.areas[i, 1] = self.dx[-1] + self.dx[-2] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
-            elif i == self.ygrid * self.xgrid - 1:  # Top right corner boundary
+            elif i == self.num_nodes - 1:  # Top right corner boundary
                 self.areas[i, 0] = self.dy[-1] + self.dy[-2] / 2  # Ay
                 self.areas[i, 1] = self.dx[-1] + self.dx[-2] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
             elif i < self.ygrid:  # Left boundary
-               self.areas[i, 0] = self.dy[i + 1] / 2 + self.dy[i] / 2  # Ay
-               self.areas[i, 1] = self.dx[0] + self.dx[1] / 2  # Ax
-               self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
-            elif i >= self.ygrid * self.xgrid - self.ygrid:  # Right boundary
+                self.areas[i, 0] = self.dy[i + 1] / 2 + self.dy[i] / 2  # Ay
+                self.areas[i, 1] = self.dx[0] + self.dx[1] / 2  # Ax
+                self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
+            elif i >= self.num_nodes - self.ygrid:  # Right boundary
                 self.areas[i, 0] = self.dy[(i - self.column * self.ygrid) + 1] / 2 + \
                                    self.dy[i - self.column * self.ygrid] / 2  # Ay
                 self.areas[i, 1] = self.dx[-1] + self.dx[-2] / 2  # Ax
@@ -126,7 +126,7 @@ class Mesh:
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
             else:
                 self.areas[i, 0] = self.dy[(i - self.column * self.ygrid) + 1] / 2 + \
-                                   self.dy[i - self.column * self.ygrid] / 2 # Ay
+                                   self.dy[i - self.column * self.ygrid] / 2  # Ay
                 self.areas[i, 1] = self.dx[self.column] / 2 + self.dx[self.column + 1] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
 
@@ -297,38 +297,63 @@ def save_mesh_data(mesh):
 
 def face_velocities(mesh):
     # Nodes not on boundaries
-    for i in range(mesh.num_nodes):
-        pressures = pressure_interpolation(mesh, i)
-        # Interior nodes
-        if i > mesh.ygrid:
-            # East face velocity
-            mesh.vel_face[i, 0] = (mesh.velocities[i] + mesh.velocites[i + mesh.ygrid]) / 2 \
-                                  + (1 / 2)\
-                                  * ((mesh.volumes[i]/mesh.a_momentum[i]) *
-                                     ((mesh.pressure[i + mesh.ygrid*2]-mesh.pressure[i])
-                                      / (2*mesh.areas[i + mesh.ygrid, 1])) +
-                                     (mesh.volumes[i+mesh.ygrid] / mesh.a_momentum[i + mesh.ygrid]) *
-                                     ((mesh.pressure[i + mesh.ygrid] - mesh.pressure[i - mesh.ygrid]) /
-                                      (2 * mesh.areas[i, 1]))) \
-                                  - (mesh.volumes[i] / 2 + mesh.volumes[i+mesh.ygrid] / 2) * \
-                                  (1 / mesh.a_momentum[i + mesh.ygrid] + 1 / mesh.a_momentum[i + mesh.ygrid]) * \
-                                  ((mesh.pressure[i+mesh.ygrid] - mesh.pressure[i]) /
-                                   (2*mesh.dx[mesh.column + 1]))
-
-            # North face velocity
-            mesh.vel_face[i, 1] = (mesh.velocities[i] + mesh.velocites[i + mesh.ygrid]) / 2 + (1 / 2)
-        # Nodes next to left boundary
-
-        # Nodes two from right boundary
-
-        # Nodes two from top boundary
+    for idx in range(mesh.num_nodes - mesh.ygrid):
+        dpx_E, dpx_p, dpx_e, dpy_N, dpy_p, dpy_n = pressure_derivatives(mesh, idx)
+        if idx >= mesh.ygrid * mesh.xgrid - mesh.ygrid:  # Right boundary adjacent
+            continue
+        elif idx % mesh.ygrid == (mesh.ygrid - 1):  # Top boundary adjacent
+            continue
+        else:
+            mesh.vel_face[idx, 0] = (mesh.velocities[idx, 0] + mesh.velocities[idx + mesh.ygrid, 0]) / 2 \
+                                    + (1 / 2) * (mesh.volumes[idx] / mesh.a_momentum[idx, 0] * dpx_p
+                                                 + mesh.volumes[idx + mesh.ygrid] /
+                                                 mesh.a_momentum[idx + mesh.ygrid, 0] * dpx_E) - \
+                                    (mesh.volumes[idx] / 2 + mesh.volumes[idx + mesh.ygrid] / 2) * \
+                                    (1 / mesh.a_momentum[idx + mesh.ygrid, 0] + 1 / mesh.a_momentum[
+                                        idx + mesh.ygrid, 0]) \
+                                    * dpx_e
+            mesh.vel_face[idx, 1] = (mesh.velocities[idx, 1] + mesh.velocities[idx + mesh.ygrid, 1]) / 2 \
+                                    + (1 / 2) * (mesh.volumes[idx] / mesh.a_momentum[idx, 0] * dpy_p
+                                                 + mesh.volumes[idx + mesh.ygrid] /
+                                                 mesh.a_momentum[idx + mesh.ygrid, 0] * dpy_N) - \
+                                    (mesh.volumes[idx] / 2 + mesh.volumes[idx + mesh.ygrid] / 2) * \
+                                    (1 / mesh.a_momentum[idx + mesh.ygrid, 0] + 1 / mesh.a_momentum[
+                                        idx + mesh.ygrid, 0]) \
+                                    * dpy_n
 
 
-def pressure_interpolation(mesh, index):  # TODO
-    pass
+def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable
+    dpx_E = (mesh.pressure[idx + mesh.ygrid * 2] - mesh.pressure[idx]) / (2 * mesh.areas[idx + mesh.ygrid, 1])
+    dpx_p = (mesh.pressure[idx + mesh.ygrid] - mesh.pressure[idx - mesh.ygrid]) / (2 * mesh.areas[idx, 1])
+    dpx_e = (mesh.pressure[idx + mesh.ygrid] - mesh.pressure[idx]) / (2 * mesh.dx[mesh.column + 1])
+    dpy_N = (mesh.pressure[idx + 2] - mesh.pressure[idx]) / (2 * mesh.areas[idx + mesh.ygrid, 0])
+    dpy_p = (mesh.pressure[idx + 1] - mesh.pressure[idx - 1]) / (2 * mesh.areas[idx, 0])
+    dpy_n = (mesh.pressure[idx + 1] - mesh.pressure[idx]) / (2 * mesh.dy[idx + 1])
+    if idx == 0:  # Bottom left boundary corner adjacent
+        dpx_p = (mesh.pressure[idx + mesh.ygrid] + mesh.pressure[idx] - 2 * mesh.pressure_boundary[idx + 1, 0]) \
+                / (2 * mesh.areas[idx, 1])
+        dpy_p = (mesh.pressure[idx + 1] + mesh.pressure[idx] - 2 * mesh.pressure_boundary[idx + 1, 3]) / (
+                2 * mesh.areas[idx, 0])
+    elif idx < mesh.ygrid:  # Left boundary adjacent
+        dpx_p = (mesh.pressure[idx + mesh.ygrid] + mesh.pressure[idx] - 2 * mesh.pressure_boundary[idx + 1, 0]) \
+                / (2 * mesh.areas[idx, 1])
+    elif idx % mesh.ygrid == 0 and idx != 0:  # Bottom boundary adjacent
+        dpy_p = (mesh.pressure[idx + 1] + mesh.pressure[idx] -
+                 2 * mesh.pressure_boundary[mesh.column[idx] + 1]) / (2 * mesh.areas[idx, 0])
+    elif idx > mesh.num_nodes - 2 * mesh.ygrid & idx < mesh.num_nodes - mesh.ygrid:  # Two from right boundary
+        dpx_E = (2 * mesh.pressure_boundary[idx % mesh.ygrid + 1, 2] -
+                 mesh.pressure[idx] - mesh.pressure[idx + mesh.ygrid]) \
+                / (2 * mesh.areas[idx + mesh.ygrid, 1])
+    elif idx % mesh.ygrid == (mesh.ygrid - 2):  # Two from top boundary
+        dpy_N = (2 * mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx] - mesh.pressure[idx + 1]) / \
+                (2 * mesh.areas[idx + mesh.ygrid, 0])
+    return dpx_E, dpx_p, dpx_e, dpy_N, dpy_p, dpy_n
+
 
 def set_boundary_values(mesh):
     pass
+
+
 # Node functions
 
 # Discretization Functions
