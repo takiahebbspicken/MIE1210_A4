@@ -29,7 +29,6 @@ class Mesh:
         if mesh_type.lower() == '2D_uniform'.lower():
             self.generate_2d_uniform_mesh(x_points, y_points, length_x, length_y)
             self.cell_volumes_areas_deltas()
-        self.face_velocities = None
 
     def create_mesh(self, boundaries_u, boundaries_v, boundaries_p):
         for boundary_u, boundary_v, boundary_p in zip(boundaries_u, boundaries_v, boundaries_p):
@@ -76,19 +75,22 @@ class Mesh:
         self.num_nodes = (len(self.dx) - 1) * (len(self.dy) - 1)
         self.x_coordinates = np.cumsum(self.dx[1:-1])
         self.y_coordiantes = np.cumsum(self.dy[1:-1])
-        self.u_vel = np.zeros(((x_points+2)*(y_points+2), 1))
-        self.v_vel = np.zeros(((x_points+2)*(y_points+2), 1))
-        self.presure = np.zeros(((x_points+2)*(y_points+2), 1))
-        self.u_vel_face = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        self.v_vel_face = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        self.column = [int(np.floor(i / self.ygrid)) for i in range(self.num_nodes)]
+        self.vel = np.zeros(((x_points+2)*(y_points+2), 2))
+        self.vel_correction = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        self.pressure = np.zeros(((x_points+2)*(y_points+2), 1))
+        self.pressure_correction = np.zeros(((x_points + 2) * (y_points + 2), 1))
+        self.vel_face = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        self.vel_face_correction = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        self.a_momentum = np.zeros(((x_points + 2) * (y_points + 2), 5))
+        self.momentum_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        self.a_pressure = np.zeros(((x_points + 2) * (y_points + 2), 5))
+        self.pressure_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
 
     def cell_volumes_areas_deltas(self):
         self.volumes = np.zeros((self.num_nodes, 1))
         self.areas = np.zeros((self.num_nodes, 2))
-        column_counter = 0
         for i in range(self.num_nodes):
-            if i % self.ygrid == 0 and i != 0:
-                column_counter += 1
             if i == 0:  # Bottom left boundary corner
                 self.areas[i, 0] = self.dy[0] + self.dy[1] / 2  # Ay
                 self.areas[i, 1] = self.dx[0] + self.dx[1] / 2  # Ax
@@ -110,22 +112,22 @@ class Mesh:
                self.areas[i, 1] = self.dx[0] + self.dx[1] / 2  # Ax
                self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
             elif i >= self.ygrid * self.xgrid - self.ygrid:  # Right boundary
-                self.areas[i, 0] = self.dy[(i - column_counter * self.ygrid) + 1] / 2 + \
-                                   self.dy[i - column_counter * self.ygrid] / 2  # Ay
+                self.areas[i, 0] = self.dy[(i - self.column * self.ygrid) + 1] / 2 + \
+                                   self.dy[i - self.column * self.ygrid] / 2  # Ay
                 self.areas[i, 1] = self.dx[-1] + self.dx[-2] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
             elif i % self.ygrid == 0 and i != 0:  # Bottom boundary
                 self.areas[i, 0] = self.dy[0] + self.dy[1] / 2  # Ay
-                self.areas[i, 1] = self.dx[column_counter] / 2 + self.dx[column_counter + 1] / 2  # Ax
+                self.areas[i, 1] = self.dx[self.column] / 2 + self.dx[self.column + 1] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
             elif i % self.ygrid == (self.ygrid - 1):  # Top boundary
                 self.areas[i, 0] = self.dy[-1] + self.dy[-2] / 2  # Ay
-                self.areas[i, 1] = self.dx[column_counter] / 2 + self.dx[column_counter + 1] / 2  # Ax
+                self.areas[i, 1] = self.dx[self.column] / 2 + self.dx[self.column + 1] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
             else:
-                self.areas[i, 0] = self.dy[(i - column_counter * self.ygrid) + 1] / 2 + \
-                                   self.dy[i - column_counter * self.ygrid] / 2 # Ay
-                self.areas[i, 1] = self.dx[column_counter] / 2 + self.dx[column_counter + 1] / 2  # Ax
+                self.areas[i, 0] = self.dy[(i - self.column * self.ygrid) + 1] / 2 + \
+                                   self.dy[i - self.column * self.ygrid] / 2 # Ay
+                self.areas[i, 1] = self.dx[self.column] / 2 + self.dx[self.column + 1] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
 
     def set_rho(self, rhos):
@@ -286,6 +288,7 @@ class Visualization:
     # Contour with streamlines function
     # Velocity profile along horizontal line through cavity center function
 
+
 # Mesh Functions
 # Save mesh data (pressure and velocity field)
 def save_mesh_data(mesh):
@@ -295,12 +298,25 @@ def save_mesh_data(mesh):
 def face_velocities(mesh):
     # Nodes not on boundaries
     for i in range(mesh.num_nodes):
+        pressures = pressure_interpolation(mesh, i)
         # Interior nodes
         if i > mesh.ygrid:
             # East face velocity
-            mesh.face_velocities[i, 0] = (mesh.velocities[i] + mesh.velocites[i + mesh.ygrid]) / 2 + (1 / 2)
+            mesh.vel_face[i, 0] = (mesh.velocities[i] + mesh.velocites[i + mesh.ygrid]) / 2 \
+                                  + (1 / 2)\
+                                  * ((mesh.volumes[i]/mesh.a_momentum[i]) *
+                                     ((mesh.pressure[i + mesh.ygrid*2]-mesh.pressure[i])
+                                      / (2*mesh.areas[i + mesh.ygrid, 1])) +
+                                     (mesh.volumes[i+mesh.ygrid] / mesh.a_momentum[i + mesh.ygrid]) *
+                                     ((mesh.pressure[i + mesh.ygrid] - mesh.pressure[i - mesh.ygrid]) /
+                                      (2 * mesh.areas[i, 1]))) \
+                                  - (mesh.volumes[i] / 2 + mesh.volumes[i+mesh.ygrid] / 2) * \
+                                  (1 / mesh.a_momentum[i + mesh.ygrid] + 1 / mesh.a_momentum[i + mesh.ygrid]) * \
+                                  ((mesh.pressure[i+mesh.ygrid] - mesh.pressure[i]) /
+                                   (2*mesh.dx[mesh.column + 1]))
+
             # North face velocity
-            mesh.face_velocities[i, 1] = (mesh.velocities[i] + mesh.velocites[i + mesh.ygrid]) / 2 + (1 / 2)
+            mesh.vel_face[i, 1] = (mesh.velocities[i] + mesh.velocites[i + mesh.ygrid]) / 2 + (1 / 2)
         # Nodes next to left boundary
 
         # Nodes two from right boundary
@@ -308,24 +324,8 @@ def face_velocities(mesh):
         # Nodes two from top boundary
 
 
-def pressure_interpolation(mesh, index): #TODO
-    # Offset = -1:w, 1:e, 2:ee, -11:s, 11:n, 12:nn
-    # left boundary
-    if index < mesh.ygrid:
-        if mesh.left_boundary.type == 'W':
-            pass
-        if mesh.left_boundary.type == 'VEL':
-            pass
-    # top boundary
-    elif index == 1:
-        pass
-    # right boundary
-
-    # bottom boundary
-
-    # two from right boundary
-
-    # two from top boundary
+def pressure_interpolation(mesh, index):  # TODO
+    pass
 
 def set_boundary_values(mesh):
     pass
@@ -371,13 +371,15 @@ def main():
     print("Elapsed (without compilation) = %s" % (end - start))
     # start = time.time()
     # mesh2 = Mesh('2D', boundaries1)
-    # mesh2.generate_2d_uniform_mesh(320, 320, 1, 1)vd
+    # mesh2.generate_2d_uniform_mesh(320, 320, 1, 1)
     # end = time.time()
     # print("Elapsed (with compilation) = %s" % (end - start))
 
     # LID DRIVEN CAVITY WITH STEP PROBLEM
+    object = True
 
     # BACK-STEP FLOW PROBLEM
+    object = True
 
 
 if __name__ == '__main__':
