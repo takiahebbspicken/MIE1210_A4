@@ -94,11 +94,12 @@ class Mesh:
         self.vel_face_correction = np.zeros((self.num_nodes, 4))
         self.vel_face_correction_boundaries = np.zeros((self.ygrid + 2, 4))
         self.a_momentum = np.zeros((self.num_nodes, 5))  # [P E N W S]
-        self.momentum_source_u= np.zeros((self.num_nodes, 2))  # [Su_u Su_v]
+        self.momentum_source_u = np.zeros((self.num_nodes, 2))  # [Su_u Su_v]
         self.momentum_source_pp = np.zeros((self.num_nodes, 2))  # [Spp_u Spp_v]
         self.momentum_pressure_source = np.zeros((self.num_nodes, 2))  # [S_pp_X, S_pp_Y]
         self.a_pressure = np.zeros((self.num_nodes, 5))  # [P E N W S]
-        self.pressure_source = np.zeros((self.num_nodes, 2))
+        self.pressure_source = np.zeros((self.num_nodes, 1))
+        self.a_pressure_boundary = np.ones((self.num_nodes, 1))  # 1 if node is not next to D u/v boundary, else 0
 
         # Maybe
         # self.vel = np.zeros(((x_points + 2) * (y_points + 2), 2))
@@ -272,9 +273,11 @@ def set_boundary_values(mesh):
     if mesh.u_left_boundary.type == 'D':
         mesh.vel_face[0:mesh.ygrid, 2] = mesh.u_left_boundary.value
         mesh.u_vel_boundaries[0:mesh.ygrid, 2] = mesh.u_left_boundary.value
+        mesh.a_pressure_boundary[0:mesh.ygrid] = 0
     if mesh.u_right_boundary == 'D':
         mesh.vel_face[mesh.num_nodes - mesh.ygrid:, 0] = mesh.u_right_boundary.value
         mesh.u_vel_boundaries[mesh.num_nodes - mesh.ygrid:, 0] = mesh.u_right_boundary.value
+        mesh.a_pressure_boundary[mesh.num_nodes - mesh.ygrid:] = 0
     if mesh.u_bottom_boundary.type == 'D':
         mesh.u_vel_boundaries[0:-1:mesh.ygrid, 3] = mesh.u_bottom_boundary.value
     if mesh.u_top_boundary.type == 'D':
@@ -288,9 +291,11 @@ def set_boundary_values(mesh):
     if mesh.v_bottom_boundary == 'D':
         mesh.vel_face[0:-1:mesh.ygrid, 3] = mesh.v_bottom_boundary.value
         mesh.v_vel_boundaries[0:-1:mesh.ygrid, 3] = mesh.v_bottom_boundary.value
+        mesh.a_pressure_boundary[0:-1:mesh.ygrid] = 0
     if mesh.v_top_boundary == 'D':
         mesh.vel_face[mesh.ygrid - 1:-1:mesh.ygrid, 1] = mesh.v_top_boundary.value
         mesh.v_vel_boundaries[mesh.ygrid - 1:-1:mesh.ygrid, 1] = mesh.v_top_boundary.value
+        mesh.a_pressure_boundary[mesh.ygrid - 1:-1:mesh.ygrid] = 0
 
 
 @jit(nopython=True, parallel=True)
@@ -319,7 +324,7 @@ def momentum_formulation(mesh):
             d_s = mesh.mus * mesh.areas[idx, 1] / mesh.dy[(idx - mesh.column[idx] * mesh.ygrid)]
             mesh.a_momentum[idx, 4] = (np.abs(f_s) + f_s) / 2 + d_s
         mesh.momentum_source_u[idx, 0] = mesh.u_vel_boundaries[idx, 0] * mesh.a_momentum[idx, 1] + \
-                                         mesh.u_vel_boundaries[idx, 1]  * mesh.a_momentum[idx, 2] + \
+                                         mesh.u_vel_boundaries[idx, 1] * mesh.a_momentum[idx, 2] + \
                                          mesh.u_vel_boundaries[idx, 2] * mesh.a_momentum[idx, 3] + \
                                          mesh.u_vel_boundaries[idx, 3] * mesh.a_momentum[idx, 4]
         mesh.momentum_source_u[idx, 1] = mesh.v_vel_boundaries[idx, 0] * mesh.a_momentum[idx, 1] + \
@@ -337,7 +342,7 @@ def momentum_formulation(mesh):
     return mesh.a_momentum
 
 
-def momentum_solver(mesh):  #TODO: this function
+def momentum_solver(mesh):  # TODO: this function
     pass
 
 
@@ -376,32 +381,32 @@ def face_velocities(mesh):
 def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable and check top calculations
     if idx >= mesh.num_nodes - mesh.ygrid:  # Right boundary
         if idx == mesh.num_nodes - 1:  # Top right corner
-            dpx_p = (2*mesh.pressure_boundary[idx - mesh.ygrid*mesh.column[idx] + 1, 2] -
+            dpx_p = (2 * mesh.pressure_boundary[idx - mesh.ygrid * mesh.column[idx] + 1, 2] -
                      mesh.pressure[idx - mesh.ygrid] -
                      mesh.pressure[idx]) / (2 * mesh.areas[idx, 1])
-            dpy_p = (2*mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx]
+            dpy_p = (2 * mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx]
                      - mesh.pressure[idx - 1]) / (2 * mesh.areas[idx, 0])
         elif idx == mesh.num_nodes - mesh.ygrid:  # Bottom right corner
-            dpx_p = (2*mesh.pressure_boundary[idx - mesh.ygrid*mesh.column[idx] + 1, 2] -
+            dpx_p = (2 * mesh.pressure_boundary[idx - mesh.ygrid * mesh.column[idx] + 1, 2] -
                      mesh.pressure[idx - mesh.ygrid] -
                      mesh.pressure[idx]) / (2 * mesh.areas[idx, 1])
-            dpy_p = (2*mesh.pressure_boundary[mesh.column[idx] + 1, 3] - mesh.pressure[idx]
+            dpy_p = (2 * mesh.pressure_boundary[mesh.column[idx] + 1, 3] - mesh.pressure[idx]
                      - mesh.pressure[idx - 1]) / (2 * mesh.areas[idx, 0])
         else:
-            dpx_p = (2*mesh.pressure_boundary[idx - mesh.ygrid*mesh.column[idx] + 1, 2] -
+            dpx_p = (2 * mesh.pressure_boundary[idx - mesh.ygrid * mesh.column[idx] + 1, 2] -
                      mesh.pressure[idx - mesh.ygrid] -
                      mesh.pressure[idx]) / (2 * mesh.areas[idx, 1])
             dpy_p = (mesh.pressure[idx + 1] - mesh.pressure[idx - 1]) / (2 * mesh.areas[idx, 0])
         return _, dpx_p, _, _, dpy_p, _
-    elif idx % mesh.ygrid == (mesh.ygrid - 1): # Top boundary
-        if idx == mesh.num_nodes-1: # Top left corner
+    elif idx % mesh.ygrid == (mesh.ygrid - 1):  # Top boundary
+        if idx == mesh.num_nodes - 1:  # Top left corner
             dpx_p = (mesh.pressure[idx + mesh.ygrid] + mesh.pressure[idx] - 2 * mesh.pressure_boundary[idx + 1, 0]) \
                     / (2 * mesh.areas[idx, 1])
-            dpy_p = (2*mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx]
+            dpy_p = (2 * mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx]
                      - mesh.pressure[idx - 1]) / (2 * mesh.areas[idx, 0])
         else:
             dpx_p = (mesh.pressure[idx + mesh.ygrid] - mesh.pressure[idx - mesh.ygrid]) / (2 * mesh.areas[idx, 1])
-            dpy_p = (2*mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx]
+            dpy_p = (2 * mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx]
                      - mesh.pressure[idx - 1]) / (2 * mesh.areas[idx, 0])
         return _, dpx_p, _, _, dpy_p, _
     else:  # Added interpolations for face velocity calculations
@@ -427,59 +432,68 @@ def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable and che
                      mesh.pressure[idx] - mesh.pressure[idx + mesh.ygrid]) \
                     / (2 * mesh.areas[idx + mesh.ygrid, 1])
         elif idx % mesh.ygrid == (mesh.ygrid - 2):  # Two from top boundary
-            dpy_N = (2 * mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx] - mesh.pressure[idx + 1]) / \
+            dpy_N = (2 * mesh.pressure_boundary[mesh.column[idx] + 1, 1] - mesh.pressure[idx] - mesh.pressure[
+                idx + 1]) / \
                     (2 * mesh.areas[idx + mesh.ygrid, 0])
         return dpx_E, dpx_p, dpx_e, dpy_N, dpy_p, dpy_n
 
 
-def pressure_correction_formulation(mesh): #TODO: this function
-    if
+def pressure_correction_formulation(mesh):  # TODO: this function
+    f_e = np.zeros(mesh.num_nodes)
+    f_w = np.zeros(mesh.num_nodes)
+    f_n = np.zeros(mesh.num_nodes)
+    f_s = np.zeros(mesh.num_nodes)
     for idx in range(mesh.num_nodes):
-        if idx == 0:  # Bottom left boundary corner
-            if
-        elif idx == mesh.ygrid - 1:  # Top left corner boundary
-
-        elif idx == mesh.num_nodes - mesh.ygrid:  # Bottom right corner boundary
-
-        elif idx == mesh.num_nodes - 1:  # Top right corner boundary
-
-        elif idx < mesh.ygrid:  # Left boundary
-
-        elif idx >= mesh.num_nodes - mesh.ygrid:  # Right boundary
-
-        elif idx % mesh.ygrid == 0 and idx != 0:  # Bottom boundary
-
-        elif idx % mesh.ygrid == (mesh.ygrid - 1):  # Top boundary
-
+        f_e[idx] = mesh.rhos * mesh.vel_face[idx, 0] * mesh.areas[idx, 0]
+        f_n[idx] = mesh.rhos * mesh.vel_face[idx, 1] * mesh.areas[idx, 1]
+        f_w[idx] = mesh.rhos * mesh.vel_face[idx, 2] * mesh.areas[idx, 0]
+        f_s[idx] = mesh.rhos * mesh.vel_face[idx, 3] * mesh.areas[idx, 1]
+        if mesh.a_pressure_boundary[idx] == 1:
+            mesh.a_pressure[idx, 1] = (mesh.rhos * mesh.areas[idx, 0] ** 2 / 2) * (
+                        1 / mesh.a_momentum[idx + mesh.ygrid, 0]
+                        + 1 / mesh.a_momentum[idx, 0])
+            mesh.a_pressure[idx, 2] = (mesh.rhos * mesh.areas[idx, 1] ** 2 / 2) * (1 / mesh.a_momentum[idx + 1, 0]
+                                                                                   + 1 / mesh.a_momentum[idx, 0])
+            mesh.a_pressure[idx, 3] = (mesh.rhos * mesh.areas[idx, 0] ** 2 / 2) * (
+                        1 / mesh.a_momentum[idx - mesh.ygrid, 0]
+                        + 1 / mesh.a_momentum[idx, 0])
+            mesh.a_pressure[idx, 4] = (mesh.rhos * mesh.areas[idx, 1] ** 2 / 2) * (1 / mesh.a_momentum[idx - 1, 0]
+                                                                                   + 1 / mesh.a_momentum[idx, 0])
         else:
-
+            mesh.a_pressure[idx, 1] = 0
+            mesh.a_pressure[idx, 2] = 0
+            mesh.a_pressure[idx, 3] = 0
+            mesh.a_pressure[idx, 4] = 0
+        mesh.pressure_source[idx] = f_w[idx] - f_e[idx] + f_s[idx] - f_n[idx]
         mesh.a_pressure[idx, 0] = mesh.a_pressure[idx, 1] + mesh.a_pressure[idx, 2] + mesh.a_pressure[idx, 3] + \
                                   mesh.a_pressure[idx, 4]
 
 
-def pressure_correction_solver(mesh): #TODO: this function
+def pressure_correction_solver(mesh):  # TODO: this function
     pass
 
 
-def correct_nodal_velocities(mesh):  #TODO: this function
+def correct_nodal_velocities(mesh):  # TODO: this function
     pass
 
 
-def correct_pressure(mesh):  #TODO: this function
+def correct_pressure(mesh):  # TODO: this function
     pass
 
 
-def correct_face_velocities(mesh):  #TODO: this function
+def correct_face_velocities(mesh):  # TODO: this function
     pass
 
 
-def pressure_extrapolation(mesh):  #TODO: this function
+def pressure_extrapolation(mesh):  # TODO: this function
     pass
 
 
 # Save mesh data (pressure and velocity field)
 def save_mesh_data(mesh):
     pass
+
+
 # Node functions
 
 # Discretization Functions
