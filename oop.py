@@ -83,16 +83,16 @@ class Mesh:
         # self.v_vel_boundaries = np.zeros((self.ygrid + 2, 4))
         self.u_vel_boundaries = np.zeros((self.num_nodes, 4))  # [E N W S] boundary velocity conditions
         self.v_vel_boundaries = np.zeros((self.num_nodes, 4))  # [E N W S]
-        self.vel_correction = np.zeros((self.num_nodes, 2))
+        self.vel_correction = np.zeros((self.num_nodes, 2))  # [u, v]
         self.vel_correction_boundaries = np.zeros((self.ygrid + 2, 4))
         self.pressure = np.zeros((self.num_nodes, 1))
-        self.pressure_boundaries = np.zeros((self.ygrid + 2, 4))
+        self.pressure_boundaries = np.zeros((self.ygrid + 2, 4))  # [LEFT TOP RIGHT BOTTOM] boundary values
         self.pressure_correction = np.zeros((self.num_nodes, 1))
-        self.pressure_correction_boundaries = np.zeros((self.ygrid + 2, 4))
+        self.pressure_correction_boundaries = np.zeros((self.ygrid + 2, 4))  # [LEFT TOP RIGHT BOTTOM] boundary values
         self.vel_face = np.zeros((self.num_nodes, 4))  # [E N W S]
         self.vel_face_boundaries = np.zeros((self.num_nodes, 4))
         self.vel_face_correction = np.zeros((self.num_nodes, 4))
-        self.vel_face_correction_boundaries = np.zeros((self.ygrid + 2, 4))
+        self.vel_face_correction_boundaries = np.zeros((self.num_nodes, 4))
         self.a_momentum = np.zeros((self.num_nodes, 5))  # [P E N W S]
         self.momentum_source_u = np.zeros((self.num_nodes, 2))  # [Su_u Su_v]
         self.momentum_source_pp = np.zeros((self.num_nodes, 2))  # [Spp_u Spp_v]
@@ -274,6 +274,7 @@ def set_boundary_values(mesh):
         mesh.vel_face[0:mesh.ygrid, 2] = mesh.u_left_boundary.value
         mesh.u_vel_boundaries[0:mesh.ygrid, 2] = mesh.u_left_boundary.value
         mesh.a_pressure_boundary[0:mesh.ygrid] = 0
+        mesh.vel_face_correction[]
     if mesh.u_right_boundary == 'D':
         mesh.vel_face[mesh.num_nodes - mesh.ygrid:, 0] = mesh.u_right_boundary.value
         mesh.u_vel_boundaries[mesh.num_nodes - mesh.ygrid:, 0] = mesh.u_right_boundary.value
@@ -343,7 +344,13 @@ def momentum_formulation(mesh):
 
 
 def momentum_solver(mesh):  # TODO: this function
-    pass
+    upper_off_diag = upper_off_diag[0:len(diag) - grid_points_y]
+    lower_off_diag = lower_off_diag[grid_points_y:]
+    super_diag = super_diag[0:]
+    sub_diag = sub_diag[1:]
+    diagonals = [diag, super_diag, sub_diag, upper_off_diag, lower_off_diag]
+    a_sparse_matrix = diags(diagonals, [0, 1, -1, grid_points_y, -grid_points_y], format='csc')
+    u_solved = spsolve(a_sparse_matrix, b_matrix)
 
 
 @jit(nopython=True, parallel=True)
@@ -450,13 +457,13 @@ def pressure_correction_formulation(mesh):  # TODO: this function
         f_s[idx] = mesh.rhos * mesh.vel_face[idx, 3] * mesh.areas[idx, 1]
         if mesh.a_pressure_boundary[idx] == 1:
             mesh.a_pressure[idx, 1] = (mesh.rhos * mesh.areas[idx, 0] ** 2 / 2) * (
-                        1 / mesh.a_momentum[idx + mesh.ygrid, 0]
-                        + 1 / mesh.a_momentum[idx, 0])
+                    1 / mesh.a_momentum[idx + mesh.ygrid, 0]
+                    + 1 / mesh.a_momentum[idx, 0])
             mesh.a_pressure[idx, 2] = (mesh.rhos * mesh.areas[idx, 1] ** 2 / 2) * (1 / mesh.a_momentum[idx + 1, 0]
                                                                                    + 1 / mesh.a_momentum[idx, 0])
             mesh.a_pressure[idx, 3] = (mesh.rhos * mesh.areas[idx, 0] ** 2 / 2) * (
-                        1 / mesh.a_momentum[idx - mesh.ygrid, 0]
-                        + 1 / mesh.a_momentum[idx, 0])
+                    1 / mesh.a_momentum[idx - mesh.ygrid, 0]
+                    + 1 / mesh.a_momentum[idx, 0])
             mesh.a_pressure[idx, 4] = (mesh.rhos * mesh.areas[idx, 1] ** 2 / 2) * (1 / mesh.a_momentum[idx - 1, 0]
                                                                                    + 1 / mesh.a_momentum[idx, 0])
         else:
@@ -473,12 +480,43 @@ def pressure_correction_solver(mesh):  # TODO: this function
     pass
 
 
-def correct_nodal_velocities(mesh):  # TODO: this function
-    pass
+def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):  # TODO: this function
+    for idx in range(mesh.num_nodes):
+        if idx < mesh.ygrid:  # Left boundary
+            mesh.vel_correction[idx, 0] = 1 / mesh.a_momentum[idx, 0] * \
+                                          (2*mesh.pressure_correction_boundaries[idx, 0]
+                                           - mesh.pressure_correction[idx + mesh.ygrid] -
+                                           mesh.pressure_correction[idx]) / mesh.areas[idx, 1] / 2 * mesh.volumes[idx]
+        elif idx >= mesh.num_nodes - mesh.ygrid:  # Right boundary
+            mesh.vel_correction[idx, 0] = 1 / mesh.a_momentum[idx, 0] \
+                                          * (mesh.pressure_correction[idx - mesh.ygrid] + mesh.pressure_correction[idx]
+                                             - 2*mesh.pressure_correction_boundaries[idx % mesh.ygrid + 1, 2]) \
+                                          / mesh.areas[idx, 1] / 2 * mesh.volumes[idx]
+        else:
+            mesh.vel_correction[idx, 0] = 1 / mesh.a_momentum[idx, 0] \
+                                          * (mesh.pressure_correction[idx - mesh.ygrid]
+                                             - mesh.pressure_correction[idx + mesh.ygrid]) \
+                                          / mesh.areas[idx, 1] / 2 * mesh.volumes[idx]
+        if idx % mesh.ygrid == 0 and idx != 0:  # Bottom boundary
+            mesh.vel_correction[idx, 1] = 1 / mesh.a_momentum[idx, 0] * \
+                                          (2 * mesh.pressure_correction_boundaries[mesh.column[idx] + 1, 3]
+                                           - mesh.pressure_correction[idx + 1] - mesh.pressure_correction[idx]) \
+                                          / mesh.areas[idx, 0] / 2 * mesh.volumes[idx]
+        elif idx % mesh.ygrid == (mesh.ygrid - 1):  # Top boundary
+            mesh.vel_correction[idx, 1] = 1 / mesh.a_momentum[idx, 0] *\
+                                          (mesh.pressure_correction[idx - 1] + mesh.pressure_correction[idx] -
+                                           2 * mesh.pressure_correction_boundaries[mesh.column[idx] + 1, 1]) \
+                                          / mesh.areas[idx, 0] / 2 * mesh.volumes[idx]
+        else:
+            mesh.vel_correction[idx, 1] = 1 / mesh.a_momentum[idx, 0] * \
+                                          (mesh.pressure_correction[idx - 1] - mesh.pressure_correction[idx + 1]) \
+                                          / mesh.areas[idx, 0] / 2 * mesh.volumes[idx]
+    mesh.vel[:, 0] += u_relaxation * mesh.vel_correction[:, 0]
+    mesh.vel[:, 1] += v_relaxation * mesh.vel_correction[:, 1]
 
 
-def correct_pressure(mesh):  # TODO: this function
-    pass
+def correct_pressure(mesh, p_relaxation):  # TODO: this function
+    mesh.pressure[:] += p_relaxation * (mesh.pressure_correction[:] - mesh.pressure_correction[mesh.ygrid + 1])
 
 
 def correct_face_velocities(mesh):  # TODO: this function
@@ -486,7 +524,9 @@ def correct_face_velocities(mesh):  # TODO: this function
 
 
 def pressure_extrapolation(mesh):  # TODO: this function
-    pass
+    mesh.pressure_boundaries[:, 0] = mesh.pressure[0:mesh.ygrid] - (1/2)*mesh.pressure[mesh.ygrid:2 * mesh.ygrid]
+    mesh.pressure_correction_boundaries = 1
+
 
 
 # Save mesh data (pressure and velocity field)
