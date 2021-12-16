@@ -25,6 +25,8 @@ class Boundary:
 class Mesh:
     def __init__(self, mesh_type, boundaries_u, boundaries_v, boundaries_p, x_points, y_points, length_x, length_y):
         self.type = mesh_type
+        self.rhos = 1
+        self.mus = 1
         self.create_mesh(boundaries_u, boundaries_v, boundaries_p)
         if mesh_type.lower() == '2D_uniform'.lower():
             self.generate_2d_uniform_mesh(x_points, y_points, length_x, length_y)
@@ -76,16 +78,35 @@ class Mesh:
         self.x_coordinates = np.cumsum(self.dx[1:-1])
         self.y_coordiantes = np.cumsum(self.dy[1:-1])
         self.column = [int(np.floor(i / self.ygrid)) for i in range(self.num_nodes)]
-        self.vel = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        self.vel_correction = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        self.pressure = np.zeros(((x_points + 2) * (y_points + 2), 1))
-        self.pressure_correction = np.zeros(((x_points + 2) * (y_points + 2), 1))
-        self.vel_face = np.zeros(((x_points + 2) * (y_points + 2), 4))
-        self.vel_face_correction = np.zeros(((x_points + 2) * (y_points + 2), 4))
-        self.a_momentum = np.zeros(((x_points + 2) * (y_points + 2), 5))
-        self.momentum_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        self.a_pressure = np.zeros(((x_points + 2) * (y_points + 2), 5))
-        self.pressure_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        self.vel = np.zeros((self.num_nodes, 2))
+        self.vel_boundaries = np.zeros((self.ygrid + 2, 4))
+        self.vel_correction = np.zeros((self.num_nodes, 2))
+        self.vel_correction_boundaries = np.zeros((self.ygrid + 2, 4))
+        self.pressure = np.zeros((self.num_nodes, 1))
+        self.pressure_boundaries = np.zeros((self.ygrid + 2, 4))
+        self.pressure_correction = np.zeros((self.num_nodes, 1))
+        self.pressure_correction_boundaries = np.zeros((self.ygrid + 2, 4))
+        self.vel_face = np.zeros((self.num_nodes, 4))
+        self.vel_face_boundaries = np.zeros((self.num_nodes, 4))
+        self.vel_face_correction = np.zeros((self.num_nodes, 4))
+        self.vel_face_correction_boundaries = np.zeros((self.ygrid + 2, 4))
+        self.a_momentum = np.zeros((self.num_nodes, 5))
+        self.momentum_source = np.zeros((self.num_nodes, 2))
+        self.momentum_pressure_source = np.zeros((self.num_nodes, 2))  # S_u, S_p
+        self.a_pressure = np.zeros((self.num_nodes, 5))
+        self.pressure_source = np.zeros((self.num_nodes, 2))
+
+        # Maybe
+        # self.vel = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        # self.vel_correction = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        # self.pressure = np.zeros(((x_points + 2) * (y_points + 2), 1))
+        # self.pressure_correction = np.zeros(((x_points + 2) * (y_points + 2), 1))
+        # self.vel_face = np.zeros(((x_points + 2) * (y_points + 2), 4))
+        # self.vel_face_correction = np.zeros(((x_points + 2) * (y_points + 2), 4))
+        # self.a_momentum = np.zeros(((x_points + 2) * (y_points + 2), 5))
+        # self.momentum_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
+        # self.a_pressure = np.zeros(((x_points + 2) * (y_points + 2), 5))
+        # self.pressure_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
 
     def cell_volumes_areas_deltas(self):
         self.volumes = np.zeros((self.num_nodes, 1))
@@ -133,59 +154,11 @@ class Mesh:
     def set_rho(self, rhos):
         self.rhos = rhos
 
+    def set_mus(self, mus):
+        self.mus = mus
+
     def set_gamma(self, gammas):
         self.gammas = gammas
-
-    # Node interaction functions
-    def create_nodes(self):
-        self.nodes = np.empty(self.num_nodes, dtype=Node)
-        self.nodes = [Node() for i in range(self.num_nodes)]
-
-    def assign_coordinates_to_nodes(self):
-        [(self.nodes[idx].set_column(idx, self), self.nodes[idx].set_coordinates(idx, self)) for idx in
-         range(self.num_nodes)]
-
-    def assign_rho_to_nodes(self, rhos):
-        [node.set_rho(rhos[i]) for i, node in enumerate(self.nodes)]
-
-
-class Node:
-    def __init__(self):
-        self.column = None
-        self.x_coordinate = None
-        self.y_coordinate = None
-
-    def set_rho(self, rho):
-        self.rho = rho
-
-    def set_column(self, idx, mesh):
-        self.column = int(np.floor(idx / mesh.ygrid))
-
-    def set_coordinates(self, index, mesh):
-        self.x_coordinate = np.sum(mesh.dx[:1 + self.column])
-        self.y_coordinate = np.sum(mesh.dy[:1 + index - self.column * mesh.ygrid])
-
-    def set_node_neighbors(self, mesh):
-        pass
-
-    def set_node_types(self, boundaries):
-        self.codes = np.zeros(self.num_nodes)
-        self.boundary_values = np.zeros(self.num_nodes)
-        for boundary in boundaries:
-            self.boundary_type(boundary)
-
-    def boundary_type(self, boundary):
-        if boundary.type == 'D':
-            if boundary.location.lower() == 'left':
-                self.codes[:self.size[1]] += 1
-            elif boundary.location.lower() == 'right':
-                self.codes[self.num_nodes - self.size[1]:] += 1
-            elif boundary.location.lower() == 'top':
-                self.codes[np.arange(self.size[1] - 1, self.num_nodes, self.size[1])] += 1
-            elif boundary.location.lower() == 'bottom':
-                self.codes[np.arange(self.size[1], self.num_nodes, self.size[1])] += 1
-            else:
-                TypeError('Incorrect location entered')
 
 
 class MomentumCoefficient:
@@ -295,6 +268,40 @@ def save_mesh_data(mesh):
     pass
 
 
+@jit(nopython=True, parallel=True)
+def momentum_formulation(mesh):
+    for idx in range(mesh.num_nodes):
+        f_e = mesh.rhos * mesh.vel_face[idx, 0] * mesh.areas[idx, 0]
+        f_n = mesh.rhos * mesh.vel_face[idx, 1] * mesh.areas[idx, 1]
+        d_e = mesh.mus * mesh.areas[idx, 0] / mesh.dx[mesh.column[idx] + 1]
+        d_n = mesh.mus * mesh.areas[idx, 1] / mesh.dy[(idx - mesh.column[idx] * mesh.ygrid) + 1]
+        mesh.a_momentum[idx, 1] = (np.abs(f_e) - f_e) / 2 + d_e
+        mesh.a_momentum[idx, 2] = (np.abs(f_n) - f_n) / 2 + d_n
+        if idx == 0:  # Bottom left boundary corner
+            f_w = mesh.rhos * mesh.vel_face[idx, 2] * mesh.areas[idx, 0]
+            f_s = mesh.rhos * mesh.vel_face[idx, 3] * mesh.areas[idx, 1]
+            d_w = mesh.mus * mesh.areas[idx, 0] / mesh.dx[mesh.column[idx]]
+            d_s = mesh.mus * mesh.areas[idx, 1] / mesh.dy[(idx - mesh.column[idx] * mesh.ygrid)]
+            mesh.a_momentum[idx, 3] = (np.abs(f_w) + f_w) / 2 + d_w
+            mesh.a_momentum[idx, 4] = (np.abs(f_s) + f_s) / 2 + d_s
+        elif idx < mesh.ygrid:  # Left boundary
+            f_w = mesh.rhos * mesh.vel_face[idx, 2] * mesh.areas[idx, 0]
+            d_w = mesh.mus * mesh.areas[idx, 0] / mesh.dx[mesh.column[idx]]
+            mesh.a_momentum[idx, 3] = (np.abs(f_w) + f_w) / 2 + d_w
+        elif idx % mesh.ygrid == 0 and idx != 0:  # Bottom boundary
+            f_s = mesh.rhos * mesh.vel_face[idx, 3] * mesh.areas[idx, 1]
+            d_s = mesh.mus * mesh.areas[idx, 1] / mesh.dy[(idx - mesh.column[idx] * mesh.ygrid)]
+            mesh.a_momentum[idx, 4] = (np.abs(f_s) + f_s) / 2 + d_s
+        mesh.a_momentum[idx, 0] = mesh.a_momentum[idx, 1] + mesh.a_momentum[idx, 2] + \
+                                  + mesh.a_momentum[idx, 3] + mesh.a_momentum[idx, 4] + \
+                                  mesh.momentum_source[idx, 1]
+        # Assign a_w and a_s for future nodes
+        mesh.a_momentum[idx + mesh.ygrid, 3] = mesh.a_momentum[idx, 1]
+        mesh.a_momentum[idx + 1, 4] = mesh.a_momentum[idx, 2]
+    return mesh.a_momentum
+
+
+@jit(nopython=True, parallel=True)
 def face_velocities(mesh):
     # Nodes not on boundaries
     for idx in range(mesh.num_nodes - mesh.ygrid):
@@ -320,8 +327,12 @@ def face_velocities(mesh):
                                     (1 / mesh.a_momentum[idx + mesh.ygrid, 0] + 1 / mesh.a_momentum[
                                         idx + mesh.ygrid, 0]) \
                                     * dpy_n
+        # Assign w and s face velocities  # TODO: not sure if needed or not?
+        mesh.vel_face[idx + mesh.ygrid, 2] = mesh.vel_face[idx, 0]
+        mesh.vel_face[idx + 1, 3] = mesh.vel_face[idx, 1]
 
 
+@jit()
 def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable
     dpx_E = (mesh.pressure[idx + mesh.ygrid * 2] - mesh.pressure[idx]) / (2 * mesh.areas[idx + mesh.ygrid, 1])
     dpx_p = (mesh.pressure[idx + mesh.ygrid] - mesh.pressure[idx - mesh.ygrid]) / (2 * mesh.areas[idx, 1])
@@ -351,6 +362,28 @@ def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable
 
 
 def set_boundary_values(mesh):
+    if mesh.u_left_boundary.type == 'D':
+        mesh.vel_face[0:mesh.ygrid, 2] = mesh.u_left_boundary.value
+    if mesh.u_bottom_boundary.type == 'D':
+        mesh.vel_face[0:-1:mesh.ygrid, 3] = mesh.u_bottom_boundary.value
+    if mesh.u_top_boundary.type == 'D':
+        mesh.vel_face[mesh.ygrid - 1:-1:mesh.ygrid, 1] = mesh.u_top_boundary.value
+    if mesh.u_top_boundary
+    elif idx == mesh.ygrid - 1:  # Top left corner boundary
+
+    elif idx == mesh.num_nodes - mesh.ygrid:  # Bottom right corner boundary
+
+    elif idx == mesh.num_nodes - 1:  # Top right corner boundary
+
+    elif idx < mesh.ygrid:  # Left boundary
+
+    elif idx >= mesh.num_nodes - mesh.ygrid:  # Right boundary
+
+    elif idx % mesh.ygrid == 0 and idx != 0:  # Bottom boundary
+
+    elif idx % mesh.ygrid == (mesh.ygrid - 1):  # Top boundary
+
+    else:
     pass
 
 
@@ -365,6 +398,7 @@ def set_boundary_values(mesh):
 
 def main():
     # LID CAVITY FLOW PROBLEM
+    # Constants and input parameters
     u_top = 1
     p_top = 1
     object = False

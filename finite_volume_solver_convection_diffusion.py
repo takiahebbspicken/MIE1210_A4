@@ -167,7 +167,7 @@ def interior_source(s_u=0):
 
 def dirichlet_boundary_source(a_b, phi_b, s_u=0):
     # Equation for source term at dirichlet boundary
-    return  a_b * phi_b + s_u
+    return a_b * phi_b + s_u
 
 
 def dirichlet_dirichlet_boundary_source(a_b1, a_b2, phi_b1, phi_b2, s_u=0):
