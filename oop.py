@@ -520,25 +520,56 @@ def correct_pressure(mesh, p_relaxation):  # TODO: this function
 
 
 def correct_face_velocities(mesh):  # TODO: this function
+    # Need to pass on boudnary correction...
     pass
 
 
 def pressure_extrapolation(mesh):  # TODO: this function
-    mesh.pressure_boundaries[:, 0] = mesh.pressure[0:mesh.ygrid] - (1/2)*mesh.pressure[mesh.ygrid:2 * mesh.ygrid]
-    mesh.pressure_correction_boundaries = 1
+    # PRESSURE TO BOUNDARY
+    # Left boundary
+    mesh.pressure_boundaries[:, 0] = mesh.pressure[0:mesh.ygrid] - (mesh.dx[0] / mesh.dx[1]) * \
+                                     (mesh.pressure[mesh.ygrid:2 * mesh.ygrid] - mesh.pressure[0:mesh.ygrid])
+    # Top boundary
+    mesh.pressure_boundaries[:, 1] = mesh.pressure[mesh.ygrid - 1:-1:mesh.ygrid] - (mesh.dy[-1] / mesh.dy[-2]) * \
+                                     (mesh.pressure[mesh.ygrid - 2:-1:mesh.ygrid]
+                                      - mesh.pressure[mesh.ygrid - 1:-1:mesh.ygrid])
+    # Right boundary
+    mesh.pressure_boundaries[:, 2] = mesh.pressure[mesh.num_nodes - mesh.ygrid:] - (mesh.dx[-1] / mesh.dx[-2]) * \
+                                     (mesh.pressure[mesh.num_nodes - 2* mesh.ygrid:mesh.num_nodes - mesh.ygrid] -
+                                      mesh.pressure[mesh.num_nodes - mesh.ygrid:])
+    # Bottom boundary
+    mesh.pressure_boundaries[:, 3] = mesh.pressure[0:-1:mesh.ygrid] - (mesh.dy[0] / mesh.dy[1]) * \
+                                     (mesh.pressure[1:-1:mesh.ygrid] - mesh.pressure[0:-1:mesh.ygrid])
 
+    # PRESSURE CORRECTION TO BOUNDARY
+    mesh.pressure_correction_boundaries[:, 0] = mesh.pressure_correction[]
+    # Left boundary
+    mesh.pressure_correction_boundaries[:, 0] = mesh.pressure_correction[0:mesh.ygrid] - \
+                                                (mesh.dx[0] / mesh.dx[1]) * \
+                                     (mesh.pressure_correction[mesh.ygrid:2 * mesh.ygrid] -
+                                      mesh.pressure_correction[0:mesh.ygrid])
+    # Top boundary
+    mesh.pressure_correction_boundaries[:, 1] = mesh.pressure_correction[mesh.ygrid - 1:-1:mesh.ygrid] - \
+                                                (mesh.dy[-1] / mesh.dy[-2]) * \
+                                     (mesh.pressure_correction[mesh.ygrid - 2:-1:mesh.ygrid]
+                                      - mesh.pressure_correction[mesh.ygrid - 1:-1:mesh.ygrid])
+    # Right boundary
+    mesh.pressure_correction_boundaries[:, 2] = mesh.pressure_correction[mesh.num_nodes - mesh.ygrid:] - \
+                                                (mesh.dx[-1] / mesh.dx[-2]) * \
+                                     (mesh.pressure_correction[mesh.num_nodes -
+                                                               2 * mesh.ygrid:mesh.num_nodes - mesh.ygrid] -
+                                      mesh.pressure_correction[mesh.num_nodes - mesh.ygrid:])
+    # Bottom boundary
+    mesh.pressure_correction_boundaries[:, 3] = mesh.pressure_correction[0:-1:mesh.ygrid] - \
+                                                (mesh.dy[0] / mesh.dy[1]) * \
+                                     (mesh.pressure_correction[1:-1:mesh.ygrid] -
+                                      mesh.pressure_correction[0:-1:mesh.ygrid])
 
 
 # Save mesh data (pressure and velocity field)
 def save_mesh_data(mesh):
     pass
 
-
-# Node functions
-
-# Discretization Functions
-
-# Solver Functions
 
 # Visualization Functions
 def fvm_solver(mesh):
