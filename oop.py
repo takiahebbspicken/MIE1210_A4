@@ -210,17 +210,17 @@ def set_boundary_values(mesh):
         mesh.pressure_boundaries[:, 1:2] = mesh.pressure[mesh.ygrid - 1::mesh.ygrid] - \
                                            mesh.p_left_boundary.value * mesh.dy[-1]
     # Wall conditions
-    if mesh.u_left_boundary.type == 'D' and mesh.u_left_boundary.value == 0:
-        if mesh.v_left_boundary.type == 'D' and mesh.v_left_boundary.value == 0:
+    if mesh.u_left_boundary.type == 'D':
+        if mesh.v_left_boundary.type == 'D':
             mesh.u_boundary_idx[0:mesh.ygrid, 2] = 0
-    if mesh.u_right_boundary.type == 'D' and mesh.u_right_boundary.value == 0:
-        if mesh.v_right_boundary.type == 'D' and mesh.v_right_boundary.value == 0:
+    if mesh.u_right_boundary.type == 'D':
+        if mesh.v_right_boundary.type == 'D':
             mesh.u_boundary_idx[mesh.num_nodes - mesh.ygrid:, 0] = 0
-    if mesh.u_top_boundary.type == 'D' and mesh.u_top_boundary.value == 0:
-        if mesh.v_top_boundary.type == 'D' and mesh.v_top_boundary.value == 0:
+    if mesh.u_top_boundary.type == 'D':
+        if mesh.v_top_boundary.type == 'D':
             mesh.u_boundary_idx[mesh.ygrid - 1::mesh.ygrid, 1] = 0
-    if mesh.u_bottom_boundary.type == 'D' and mesh.u_bottom_boundary.value == 0:
-        if mesh.v_bottom_boundary.type == 'D' and mesh.v_bottom_boundary.value == 0:
+    if mesh.u_bottom_boundary.type == 'D':
+        if mesh.v_bottom_boundary.type == 'D':
             mesh.u_boundary_idx[0:-1:mesh.ygrid, 3] = 0
 
 
