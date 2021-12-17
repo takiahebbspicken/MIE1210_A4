@@ -78,7 +78,7 @@ class Mesh:
         self.x_coordinates = np.cumsum(self.dx[1:-1])
         self.y_coordiantes = np.cumsum(self.dy[1:-1])
         self.column = [int(np.floor(i / self.ygrid)) for i in range(self.num_nodes)]
-        self.vel = np.zeros((self.num_nodes, 2))
+        self.vel = np.zeros((self.num_nodes, 2))  # [u, v]
         # self.u_vel_boundaries = np.zeros((self.ygrid + 2, 4))
         # self.v_vel_boundaries = np.zeros((self.ygrid + 2, 4))
         self.u_vel_boundaries = np.zeros((self.num_nodes, 4))  # [E N W S] boundary velocity conditions
@@ -100,18 +100,6 @@ class Mesh:
         self.a_pressure = np.zeros((self.num_nodes, 5))  # [P E N W S]
         self.pressure_source = np.zeros((self.num_nodes, 1))
         self.a_pressure_boundary = np.ones((self.num_nodes, 1))  # 1 if node is not next to D u/v boundary, else 0
-
-        # Maybe
-        # self.vel = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        # self.vel_correction = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        # self.pressure = np.zeros(((x_points + 2) * (y_points + 2), 1))
-        # self.pressure_correction = np.zeros(((x_points + 2) * (y_points + 2), 1))
-        # self.vel_face = np.zeros(((x_points + 2) * (y_points + 2), 4))
-        # self.vel_face_correction = np.zeros(((x_points + 2) * (y_points + 2), 4))
-        # self.a_momentum = np.zeros(((x_points + 2) * (y_points + 2), 5))
-        # self.momentum_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
-        # self.a_pressure = np.zeros(((x_points + 2) * (y_points + 2), 5))
-        # self.pressure_source = np.zeros(((x_points + 2) * (y_points + 2), 2))
 
     def cell_volumes_areas_deltas(self):
         self.volumes = np.zeros((self.num_nodes, 1))
@@ -281,7 +269,7 @@ def set_boundary_values(mesh):
     if mesh.u_bottom_boundary.type == 'D':
         mesh.u_vel_boundaries[0:-1:mesh.ygrid, 3] = mesh.u_bottom_boundary.value
     if mesh.u_top_boundary.type == 'D':
-        mesh.u_vel_boundaries[mesh.ygrid - 1:-1:mesh.ygrid, 1] = mesh.u_top_boundary.value
+        mesh.u_vel_boundaries[mesh.ygrid - 1::mesh.ygrid, 1] = mesh.u_top_boundary.value
 
     # V boundaries
     if mesh.v_left_boundary.type == 'D':
@@ -293,9 +281,9 @@ def set_boundary_values(mesh):
         mesh.v_vel_boundaries[0:-1:mesh.ygrid, 3] = mesh.v_bottom_boundary.value
         mesh.a_pressure_boundary[0:-1:mesh.ygrid] = 0
     if mesh.v_top_boundary == 'D':
-        mesh.vel_face[mesh.ygrid - 1:-1:mesh.ygrid, 1] = mesh.v_top_boundary.value
-        mesh.v_vel_boundaries[mesh.ygrid - 1:-1:mesh.ygrid, 1] = mesh.v_top_boundary.value
-        mesh.a_pressure_boundary[mesh.ygrid - 1:-1:mesh.ygrid] = 0
+        mesh.vel_face[mesh.ygrid - 1::mesh.ygrid, 1] = mesh.v_top_boundary.value
+        mesh.v_vel_boundaries[mesh.ygrid - 1::mesh.ygrid, 1] = mesh.v_top_boundary.value
+        mesh.a_pressure_boundary[mesh.ygrid - 1::mesh.ygrid] = 0
 
     if mesh.p_left_boundary.type == 'N':
         mesh.pressure_boundaries[:, 0:1] = mesh.pressure[0:mesh.ygrid] - \
@@ -307,7 +295,7 @@ def set_boundary_values(mesh):
         mesh.pressure_boundaries[:, 3:4] = mesh.pressure[0:-1:mesh.ygrid] - \
                                                     mesh.p_left_boundary.value * mesh.dy[0]
     if mesh.p_top_boundary.type == 'N':
-        mesh.pressure_boundaries[:, 1:2] = mesh.pressure[mesh.ygrid - 1:-1:mesh.ygrid] - \
+        mesh.pressure_boundaries[:, 1:2] = mesh.pressure[mesh.ygrid - 1::mesh.ygrid] - \
                                                     mesh.p_left_boundary.value * mesh.dy[-1]
 
 # @jit(parallel=True)
@@ -351,17 +339,22 @@ def momentum_formulation(mesh):
         mesh.a_momentum[idx + 1, 4] = mesh.a_momentum[idx, 2]
         mesh.momentum_pressure_source[idx, 0] = - dpx_p * mesh.volumes[idx]  # TODO: verify sign here and below
         mesh.momentum_pressure_source[idx, 1] = - dpy_p * mesh.volumes[idx]
-    return mesh.a_momentum
 
 
-def momentum_solver(mesh):  # TODO: this function
-    upper_off_diag = upper_off_diag[0:len(diag) - grid_points_y]
-    lower_off_diag = lower_off_diag[grid_points_y:]
-    super_diag = super_diag[0:]
-    sub_diag = sub_diag[1:]
+def momentum_solver(mesh):
+    upper_off_diag = -mesh.a_momentum[0:mesh.num_nodes - mesh.ygrid, 1]
+    lower_off_diag = -mesh.a_momentum[mesh.ygrid:, 3]
+    diag = mesh.a_momentum[:, 0]
+    super_diag = -mesh.a_momentum[0:-1, 2]
+    sub_diag = -mesh.a_momentum[1:, 4]
     diagonals = [diag, super_diag, sub_diag, upper_off_diag, lower_off_diag]
-    a_sparse_matrix = diags(diagonals, [0, 1, -1, grid_points_y, -grid_points_y], format='csc')
-    u_solved = spsolve(a_sparse_matrix, b_matrix)
+    a_sparse_matrix = diags(diagonals, [0, 1, -1, mesh.ygrid, -mesh.ygrid], format='csc')
+    b_matrix_u = mesh.momentum_pressure_source[:, 0] + mesh.momentum_source_u[:, 0]
+    b_matrix_v = mesh.momentum_pressure_source[:, 1] + mesh.momentum_source_u[:, 1]
+    u_solved = spsolve(a_sparse_matrix, b_matrix_u)
+    v_solved = spsolve(a_sparse_matrix, b_matrix_v)
+    mesh.vel[:, 0] = u_solved
+    mesh.vel[:, 1] = v_solved
 
 
 # @jit(nopython=True, parallel=True)
@@ -489,8 +482,18 @@ def pressure_correction_formulation(mesh):
                                   mesh.a_pressure[idx, 4]
 
 
-def pressure_correction_solver(mesh):  # TODO: this function
-    pass
+def pressure_correction_solver(mesh):
+    upper_off_diag = -mesh.a_pressure[0:mesh.num_nodes - mesh.ygrid, 1]
+    lower_off_diag = -mesh.a_pressure[mesh.ygrid:, 3]
+    diag = mesh.a_pressure[:, 0]
+    super_diag = -mesh.a_pressure[0:-1, 2]
+    sub_diag = -mesh.a_pressure[1:, 4]
+    diagonals = [diag, super_diag, sub_diag, upper_off_diag, lower_off_diag]
+    a_sparse_matrix = diags(diagonals, [0, 1, -1, mesh.ygrid, -mesh.ygrid], format='csc')
+    b_matrix = mesh.pressure_source[:]
+    p_correction_solved = spsolve(a_sparse_matrix, b_matrix)
+    mesh.pressure_source = p_correction_solved
+
 
 
 def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):  # TODO: this function
@@ -560,9 +563,9 @@ def pressure_extrapolation(mesh):
     mesh.pressure_boundaries[:, 0] = mesh.pressure[0:mesh.ygrid] - (mesh.dx[0] / mesh.dx[1]) * \
                                      (mesh.pressure[mesh.ygrid:2 * mesh.ygrid] - mesh.pressure[0:mesh.ygrid])
     # Top boundary
-    mesh.pressure_boundaries[:, 1] = mesh.pressure[mesh.ygrid - 1:-1:mesh.ygrid] - (mesh.dy[-1] / mesh.dy[-2]) * \
-                                     (mesh.pressure[mesh.ygrid - 2:-1:mesh.ygrid]
-                                      - mesh.pressure[mesh.ygrid - 1:-1:mesh.ygrid])
+    mesh.pressure_boundaries[:, 1] = mesh.pressure[mesh.ygrid - 1::mesh.ygrid] - (mesh.dy[-1] / mesh.dy[-2]) * \
+                                     (mesh.pressure[mesh.ygrid - 2::mesh.ygrid]
+                                      - mesh.pressure[mesh.ygrid - 1::mesh.ygrid])
     # Right boundary
     mesh.pressure_boundaries[:, 2] = mesh.pressure[mesh.num_nodes - mesh.ygrid:] - (mesh.dx[-1] / mesh.dx[-2]) * \
                                      (mesh.pressure[mesh.num_nodes - 2* mesh.ygrid:mesh.num_nodes - mesh.ygrid] -
@@ -578,10 +581,10 @@ def pressure_extrapolation(mesh):
                                      (mesh.pressure_correction[mesh.ygrid:2 * mesh.ygrid] -
                                       mesh.pressure_correction[0:mesh.ygrid])
     # Top boundary
-    mesh.pressure_correction_boundaries[:, 1] = mesh.pressure_correction[mesh.ygrid - 1:-1:mesh.ygrid] - \
+    mesh.pressure_correction_boundaries[:, 1] = mesh.pressure_correction[mesh.ygrid - 1::mesh.ygrid] - \
                                                 (mesh.dy[-1] / mesh.dy[-2]) * \
-                                     (mesh.pressure_correction[mesh.ygrid - 2:-1:mesh.ygrid]
-                                      - mesh.pressure_correction[mesh.ygrid - 1:-1:mesh.ygrid])
+                                     (mesh.pressure_correction[mesh.ygrid - 2::mesh.ygrid]
+                                      - mesh.pressure_correction[mesh.ygrid - 1::mesh.ygrid])
     # Right boundary
     mesh.pressure_correction_boundaries[:, 2] = mesh.pressure_correction[mesh.num_nodes - mesh.ygrid:] - \
                                                 (mesh.dx[-1] / mesh.dx[-2]) * \
