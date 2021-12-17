@@ -1,15 +1,16 @@
 import time
 import numpy as np
-import pickle
-import dill
+import os
+import shutil
 # import multiprocessing
 import matplotlib.pyplot as plt
 # from multiprocessing import Pool
-from functools import partial
 # from pathos.multiprocessing import ProcessingPool as Pool
-from numba import njit, jit
+from numba import jit
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
+from pathlib import Path
+
 
 
 class Boundary:
@@ -601,8 +602,17 @@ def pressure_extrapolation(mesh):
 
 
 # Save mesh data (pressure and velocity field)
-def save_mesh_data(mesh):
-    pass
+def save_mesh_data(mesh, idx):
+    np.save('data_live\\pressure_iteration_{}.npy'.format(idx), mesh.pressure)
+    np.save('data_live\\vel_iteration_{}.npy'.format(idx), mesh.vel)
+
+
+def save_all_data():
+    t = time.time()
+    Path("complete_data\\data_{}".format(t)).mkdir(exist_ok=True)
+    for filename in os.listdir('data_live\\'):
+        shutil.move(filename, 'complete_data\\data_{}".format(t)\\')
+
 
 
 def visualize(mesh):
@@ -613,7 +623,6 @@ def solution_convergence(mesh, err_tols):
     pass
 
 
-# Visualization Functions
 def fvm_solver(mesh, u_relax, v_relax, p_relax, max_iter, err_tols):
     for i in range(max_iter):
         set_boundary_values(mesh)
@@ -629,6 +638,7 @@ def fvm_solver(mesh, u_relax, v_relax, p_relax, max_iter, err_tols):
         save_mesh_data(mesh)
         visualize(mesh)
         solution_convergence(mesh, err_tols)
+    save_all_data()
 
 
 def main():
