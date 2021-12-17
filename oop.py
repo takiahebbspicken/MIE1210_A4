@@ -144,6 +144,9 @@ class Mesh:
                 self.areas[i, 1] = self.dx[self.column[i]] / 2 + self.dx[self.column[i] + 1] / 2  # Ax
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
 
+    def create_object(self, size, position):
+        pass
+
     def set_rho(self, rhos):
         self.rhos = rhos
 
@@ -495,7 +498,6 @@ def pressure_correction_solver(mesh):
     mesh.pressure_source = p_correction_solved
 
 
-
 def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):  # TODO: this function
     for idx in range(mesh.num_nodes):
         if idx < mesh.ygrid:  # Left boundary
@@ -603,18 +605,30 @@ def save_mesh_data(mesh):
     pass
 
 
+def visualize(mesh):
+    pass
+
+
+def solution_convergence(mesh, err_tols):
+    pass
+
+
 # Visualization Functions
-def fvm_solver(mesh, u_relax, v_relax, p_relax):
-    set_boundary_values(mesh)
-    momentum_formulation(mesh)
-    momentum_solver(mesh)
-    face_velocities(mesh)
-    pressure_correction_formulation(mesh)
-    pressure_correction_solver(mesh)
-    correct_nodal_velocities(mesh, u_relax, v_relax)
-    correct_pressure(mesh, p_relax)
-    correct_face_velocities(mesh)
-    pressure_extrapolation(mesh)
+def fvm_solver(mesh, u_relax, v_relax, p_relax, max_iter, err_tols):
+    for i in range(max_iter):
+        set_boundary_values(mesh)
+        momentum_formulation(mesh)
+        momentum_solver(mesh)
+        face_velocities(mesh)
+        pressure_correction_formulation(mesh)
+        pressure_correction_solver(mesh)
+        correct_nodal_velocities(mesh, u_relax, v_relax)
+        correct_pressure(mesh, p_relax)
+        correct_face_velocities(mesh)
+        pressure_extrapolation(mesh)
+        save_mesh_data(mesh)
+        visualize(mesh)
+        solution_convergence(mesh, err_tols)
 
 
 def main():
@@ -625,6 +639,8 @@ def main():
     u_relax = 0.2
     v_relax = 0.2
     p_relax = 0.2
+    max_iter = 100
+    err_tols = 10**(-1)
 
     object = False
     ## Create boundaries ##
@@ -658,24 +674,73 @@ def main():
     # correct_pressure(mesh1)
     # correct_face_velocities(mesh1)
     # pressure_extrapolation(mesh1)
-    fvm_solver(mesh1, u_relax, v_relax, p_relax)
+    fvm_solver(mesh1, u_relax, v_relax, p_relax, max_iter, err_tols)
 
-    start = time.time()
-    # mesh1.create_nodes()
-    end = time.time()
-    print("Elapsed (without compilation) = %s" % (end - start))
-    # start = time.time()
-    # mesh2 = Mesh('2D', boundaries1)
-    # mesh2.generate_2d_uniform_mesh(320, 320, 1, 1)
-    # end = time.time()
-    # print("Elapsed (with compilation) = %s" % (end - start))
 
-    # LID DRIVEN CAVITY WITH STEP PROBLEM
+    ### LID DRIVEN CAVITY WITH STEP PROBLEM ###
+    ## Constants and input parameters ##
+    u_top = 1
+    p_top = 1
+    u_relax = 0.2
+    v_relax = 0.2
+    p_relax = 0.2
+    max_iter = 100
+    err_tols = 10 ** (-1)
     object = True
+    size = 1
+    position = 1
 
-    # BACK-STEP FLOW PROBLEM
+    ## Create boundaries ##
+    boundary_left_u = Boundary('D', 0, 'left')
+    boundary_top_u = Boundary('D', u_top, 'top')
+    boundary_right_u = Boundary('D', 0, 'right')
+    boundary_bottom_u = Boundary('D', 0, 'bottom')
+    boundary_left_v = Boundary('D', 0, 'left')
+    boundary_top_v = Boundary('D', 0, 'top')
+    boundary_right_v = Boundary('D', 0, 'right')
+    boundary_bottom_v = Boundary('D', 0, 'bottom')
+    boundary_left_p = Boundary('N', 0, 'left')
+    boundary_top_p = Boundary('D', p_top, 'top')
+    boundary_right_p = Boundary('N', 0, 'right')
+    boundary_bottom_p = Boundary('N', 0, 'bottom')
+    # Boundary set for domain
+    boundaries_u = [boundary_left_u, boundary_right_u, boundary_top_u, boundary_bottom_u]
+    boundaries_v = [boundary_left_v, boundary_right_v, boundary_top_v, boundary_bottom_v]
+    boundaries_p = [boundary_left_p, boundary_right_p, boundary_top_p, boundary_bottom_p]
+    mesh2 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 10, 10, 1, 1)
+    mesh2.create_object(size, position)
+
+    ### BACK-STEP FLOW PROBLEM ###
+    ## Constants and input parameters ##
+    u_top = 1
+    p_top = 1
+    u_relax = 0.2
+    v_relax = 0.2
+    p_relax = 0.2
+    max_iter = 100
+    err_tols = 10 ** (-1)
     object = True
-
+    size = 1
+    position = 1
+    object = True
+    boundary_left_u = Boundary('D', 0, 'left')
+    boundary_top_u = Boundary('D', u_top, 'top')
+    boundary_right_u = Boundary('D', 0, 'right')
+    boundary_bottom_u = Boundary('D', 0, 'bottom')
+    boundary_left_v = Boundary('D', 0, 'left')
+    boundary_top_v = Boundary('D', 0, 'top')
+    boundary_right_v = Boundary('D', 0, 'right')
+    boundary_bottom_v = Boundary('D', 0, 'bottom')
+    boundary_left_p = Boundary('N', 0, 'left')
+    boundary_top_p = Boundary('D', p_top, 'top')
+    boundary_right_p = Boundary('N', 0, 'right')
+    boundary_bottom_p = Boundary('N', 0, 'bottom')
+    # Boundary set for domain
+    boundaries_u = [boundary_left_u, boundary_right_u, boundary_top_u, boundary_bottom_u]
+    boundaries_v = [boundary_left_v, boundary_right_v, boundary_top_v, boundary_bottom_v]
+    boundaries_p = [boundary_left_p, boundary_right_p, boundary_top_p, boundary_bottom_p]
+    mesh3 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 10, 10, 1, 1)
+    mesh3.create_object(size, position)
 
 if __name__ == '__main__':
     main()
