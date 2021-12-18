@@ -224,8 +224,8 @@ def set_boundary_values(mesh):
             mesh.u_boundary_idx[0:-1:mesh.ygrid, 3] = 0
 
 
-
 # @jit(parallel=True)
+# @jit(forceobj=True)
 def momentum_formulation(mesh):
     for idx in range(mesh.num_nodes):
         _, dpx_p, _, _, dpy_p, _ = pressure_derivatives(mesh, idx)
@@ -235,7 +235,6 @@ def momentum_formulation(mesh):
         d_n = mesh.areas[idx, 1] / mesh.dy[(idx - mesh.column[idx] * mesh.ygrid) + 1] / mesh.re
         mesh.a_momentum[idx, 1] = (np.abs(f_e) - f_e) / 2 + d_e
         mesh.a_momentum[idx, 2] = (np.abs(f_n) - f_n) / 2 + d_n
-
         if idx == 0:  # Bottom left boundary corner
             f_w = mesh.rhos * mesh.vel_face[idx, 2] * mesh.areas[idx, 0]
             f_s = mesh.rhos * mesh.vel_face[idx, 3] * mesh.areas[idx, 1]
@@ -251,11 +250,6 @@ def momentum_formulation(mesh):
             f_s = mesh.rhos * mesh.vel_face[idx, 3] * mesh.areas[idx, 1]
             d_s = mesh.areas[idx, 1] / mesh.dy[(idx - mesh.column[idx] * mesh.ygrid)] / mesh.re
             mesh.a_momentum[idx, 4] = (np.abs(f_s) + f_s) / 2 + d_s
-        # If wall condition:
-        # mesh.a_momentum[idx, 1] = mesh.a_momentum[idx, 1] * mesh.u_boundary_idx[idx, 0]
-        # mesh.a_momentum[idx, 2] = mesh.a_momentum[idx, 2] * mesh.u_boundary_idx[idx, 1]
-        # mesh.a_momentum[idx, 3] = mesh.a_momentum[idx, 3] * mesh.u_boundary_idx[idx, 2]
-        # mesh.a_momentum[idx, 4] = mesh.a_momentum[idx, 4] * mesh.u_boundary_idx[idx, 3]
         mesh.momentum_source_u[idx, 0] = mesh.u_vel_boundaries[idx, 0] * mesh.a_momentum[idx, 1] + \
                                          mesh.u_vel_boundaries[idx, 1] * mesh.a_momentum[idx, 2] + \
                                          mesh.u_vel_boundaries[idx, 2] * mesh.a_momentum[idx, 3] + \
@@ -267,12 +261,13 @@ def momentum_formulation(mesh):
         mesh.a_momentum[idx, 0] = mesh.a_momentum[idx, 1] + mesh.a_momentum[idx, 2] + \
                                   + mesh.a_momentum[idx, 3] + mesh.a_momentum[idx, 4] + \
                                   mesh.momentum_source_pp[idx, 1]
+        # Stop contribution to a matrix if next to boundaries
         mesh.a_momentum[idx, 1] = mesh.a_momentum[idx, 1] * mesh.u_boundary_idx[idx, 0]
         mesh.a_momentum[idx, 2] = mesh.a_momentum[idx, 2] * mesh.u_boundary_idx[idx, 1]
         mesh.a_momentum[idx, 3] = mesh.a_momentum[idx, 3] * mesh.u_boundary_idx[idx, 2]
         mesh.a_momentum[idx, 4] = mesh.a_momentum[idx, 4] * mesh.u_boundary_idx[idx, 3]
 
-        # Assign a_w and a_s for future nodes
+        # Assign a_w and a_s for future nodes if applicable
         if idx < mesh.num_nodes - mesh.ygrid:
             mesh.a_momentum[idx + mesh.ygrid, 3] = mesh.a_momentum[idx, 1]
         if idx % mesh.ygrid != (mesh.ygrid - 1):
@@ -297,8 +292,9 @@ def momentum_solver(mesh):
     mesh.vel[:, 1] = v_solved
 
 
-# @jit(nopython=True, parallel=True)
-def face_velocities(mesh):  # TODO: this function
+# @jit(nopython=True, parallel=True) # TODO: this function could be an error
+# @jit(forceobj=True)
+def face_velocities(mesh):  # TODO: this function could be an error
     # Nodes not on boundaries
     for idx in range(mesh.num_nodes):
         dpx_E, dpx_p, dpx_e, dpy_N, dpy_p, dpy_n = pressure_derivatives(mesh, idx)
@@ -342,7 +338,7 @@ def face_velocities(mesh):  # TODO: this function
             mesh.vel_face[idx + 1, 3] = -mesh.vel_face[idx, 1]
 
 
-# @jit()
+# @jit(forceobj=True)
 def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable and check top calculations
     if idx < mesh.ygrid:  # Left boundary
         dpx_E = (mesh.pressure[idx + mesh.ygrid * 2] - mesh.pressure[idx]) \
@@ -394,7 +390,8 @@ def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable and che
                     2 * mesh.dy[idx - mesh.column[idx] * mesh.ygrid + 1])
     return dpx_E, dpx_p, dpx_e, dpy_N, dpy_p, dpy_n
 
-
+# TODO: this function could be an error
+# @jit(forceobj=True)
 def pressure_correction_formulation(mesh):  # TODO: MAYBE AN ERROR HERE
     f_e = np.zeros(mesh.num_nodes)
     f_w = np.zeros(mesh.num_nodes)
@@ -441,8 +438,9 @@ def pressure_correction_solver(mesh):
     b_matrix = mesh.pressure_source
     p_correction_solved = spsolve(a_sparse_matrix, b_matrix)
     mesh.pressure_correction = p_correction_solved
+    mesh.pressure_correction = mesh.pressure_correction - mesh.pressure_correction[mesh.ygrid + 1]  # TODO probably wrong
 
-
+# @jit(forceobj=True)
 def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):
     for idx in range(mesh.num_nodes):
         if idx < mesh.ygrid:  # Left boundary
@@ -479,12 +477,13 @@ def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):
 
 
 def correct_pressure(mesh, p_relaxation):
-    normalized_correct = mesh.pressure_correction - mesh.pressure_correction[mesh.ygrid + 1]
+    normalized_correct = mesh.pressure_correction  # - mesh.pressure_correction[mesh.ygrid + 1] #TODO change back maybe
     correction = (p_relaxation * normalized_correct).reshape(mesh.num_nodes, 1)
     mesh.pressure = mesh.pressure + correction
 
 
-def correct_face_velocities(mesh):
+# @jit(forceobj=True)
+def correct_face_velocities(mesh, face_relax):
     for idx in range(mesh.num_nodes - mesh.ygrid):
         if idx >= mesh.ygrid * mesh.xgrid - mesh.ygrid:  # Right boundary adjacent
             continue
@@ -500,10 +499,10 @@ def correct_face_velocities(mesh):
                                                 - mesh.pressure_correction[idx + 1]) / 2 * mesh.areas[idx, 1]
         mesh.vel_face_correction[idx + mesh.ygrid, 2] = -mesh.vel_face_correction[idx, 0]
         mesh.vel_face_correction[idx + 1, 3] = -mesh.vel_face_correction[idx, 1]
-        mesh.vel_face[:, 0] += mesh.vel_face_correction[idx, 0]
-        mesh.vel_face[:, 1] += mesh.vel_face_correction[idx, 1]
-        mesh.vel_face[:, 2] += mesh.vel_face_correction[idx, 2]
-        mesh.vel_face[:, 3] += mesh.vel_face_correction[idx, 3]
+        mesh.vel_face[:, 0] += face_relax * mesh.vel_face_correction[idx, 0]
+        mesh.vel_face[:, 1] += face_relax * mesh.vel_face_correction[idx, 1]
+        mesh.vel_face[:, 2] += face_relax * mesh.vel_face_correction[idx, 2]
+        mesh.vel_face[:, 3] += face_relax * mesh.vel_face_correction[idx, 3]
 
 
 def pressure_extrapolation(mesh):
@@ -613,17 +612,20 @@ def solution_convergence(mesh, pressure_old, vel_old, err_tols):
     vel_error = np.abs(mesh.vel - vel_old)
     u_error = vel_error[:, 0]
     v_error = vel_error[:, 1]
+    err_mass_imbalance = np.linalg.norm(mesh.pressure_source)
     if np.linalg.norm(u_error) < err_tols and np.linalg.norm(v_error) < err_tols and np.linalg.norm(
-            pressure_error) < err_tols:
+            pressure_error) < err_tols or err_mass_imbalance < err_tols:
         cvg = True
     err_u, err_v, err_p = np.linalg.norm(u_error), np.linalg.norm(v_error), np.linalg.norm(pressure_error)
-    return cvg, err_u, err_v, err_p
+    print(err_u, err_v, err_p, err_mass_imbalance)
+    return cvg, err_u, err_v, err_p, err_mass_imbalance
 
 
-def fvm_solver(mesh, u_relax, v_relax, p_relax, max_iter, err_tols):
+def fvm_solver(mesh, u_relax, v_relax, p_relax, face_relax, max_iter, err_tols):
     errs_u = []
     errs_v = []
     errs_p = []
+    errs_mass_imbalance = []
     for i in range(max_iter):
         t1 = time.time()
         cvg = False
@@ -636,19 +638,20 @@ def fvm_solver(mesh, u_relax, v_relax, p_relax, max_iter, err_tols):
         pressure_correction_solver(mesh)
         correct_nodal_velocities(mesh, u_relax, v_relax)
         correct_pressure(mesh, p_relax)
-        correct_face_velocities(mesh)
+        correct_face_velocities(mesh, face_relax)
         pressure_extrapolation(mesh)
         # save_mesh_data(mesh, i)
-        if i > 1:
-            cvg, err_u, err_v, err_p = solution_convergence(mesh, pressure_old, vel_old, err_tols)
+        if i >= 1:
+            cvg, err_u, err_v, err_p, err_mass_imbalance = solution_convergence(mesh, pressure_old, vel_old, err_tols)
             errs_u = np.append(errs_u, err_u)
             errs_v = np.append(errs_v, err_v)
             errs_p = np.append(errs_p, err_p)
+            errs_mass_imbalance = np.append(errs_mass_imbalance, err_mass_imbalance)
             # visualize(mesh, errs_u, errs_v, errs_p, i)
         if cvg and i > 10:
             break
-        pressure_old = mesh.pressure
-        vel_old = mesh.vel
+        pressure_old = np.array(mesh.pressure, copy=True)
+        vel_old = np.array(mesh.vel, copy=True)
         t2 = time.time()
         print('Time to solve: ' + str(t2 - t1))
 
@@ -659,10 +662,11 @@ def main():
     reynolds = 100
     u_top = 1
     p_top = 1
-    u_relax = 0.2
-    v_relax = 0.2
-    p_relax = 0.000001
-    max_iter = 20
+    u_relax = 0.1
+    v_relax = 0.1
+    p_relax = 0.1
+    face_relax = 0.1
+    max_iter = 1000
     err_tols = 10 ** (-1)
 
     object = False
@@ -685,9 +689,10 @@ def main():
     boundaries_p = [boundary_left_p, boundary_right_p, boundary_top_p, boundary_bottom_p]
 
     # Create Domain
-    mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 80, 80, 1, 1)
+    mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 40, 40, 1, 1)
     mesh1.set_re(reynolds)
-    fvm_solver(mesh1, u_relax, v_relax, p_relax, max_iter, err_tols)
+    fvm_solver(mesh1, u_relax, v_relax, p_relax, face_relax, max_iter, err_tols)
+    print("DONE")
     # save_all_data()
 
     ### LID DRIVEN CAVITY WITH STEP PROBLEM ###
@@ -720,7 +725,7 @@ def main():
     boundaries_u = [boundary_left_u, boundary_right_u, boundary_top_u, boundary_bottom_u]
     boundaries_v = [boundary_left_v, boundary_right_v, boundary_top_v, boundary_bottom_v]
     boundaries_p = [boundary_left_p, boundary_right_p, boundary_top_p, boundary_bottom_p]
-    mesh2 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 50, 50, 1, 1)
+    mesh2 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 100, 100, 1, 1)
     mesh2.create_object(size, position)
 
     ### BACK-STEP FLOW PROBLEM ###
