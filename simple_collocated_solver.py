@@ -3,16 +3,14 @@ import numpy as np
 import os
 import shutil
 import scipy
-# import multiprocessing
 import matplotlib.pyplot as plt
-# from multiprocessing import Pool
-# from pathos.multiprocessing import ProcessingPool as Pool
+import scipy.sparse.linalg as spla
 from numba import jit
+from scipy import linalg, sparse
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve, gmres
 from pathlib import Path
-import scipy.sparse.linalg as spla
-from scipy import linalg, sparse
+
 
 
 class Boundary:
@@ -32,6 +30,7 @@ class Mesh:
         self.mus = 1
         self.create_mesh(boundaries_u, boundaries_v, boundaries_p)
         self.is_ref_node = False
+        self.is_object = False
         if mesh_type.lower() == '2D_uniform'.lower():
             self.generate_2d_uniform_mesh(x_points, y_points, length_x, length_y)
             self.cell_volumes_areas_deltas()
@@ -155,6 +154,7 @@ class Mesh:
                 self.volumes[i] = self.areas[i, 0] * self.areas[i, 1]
 
     def create_object(self, size, position):
+        self.is_object = True
         pass
 
     def set_re(self, re):
@@ -242,8 +242,6 @@ def set_boundary_values(mesh):
             mesh.u_boundary_idx[0:-1:mesh.ygrid, 3] = 0
 
 
-# @jit(parallel=True)
-# @jit(forceobj=True)
 def momentum_formulation(mesh):
     for idx in range(mesh.num_nodes):
         _, dpx_p, _, _, dpy_p, _ = pressure_derivatives(mesh, idx)
@@ -319,8 +317,6 @@ def momentum_solver(mesh, uv_relax):
     return residual_u, residual_v
 
 
-# @jit(nopython=True, parallel=True)
-# @jit(forceobj=True)
 def face_velocities(mesh):  # TODO: this function could be an error
     # Nodes not on boundaries
     for idx in range(mesh.num_nodes):
@@ -365,7 +361,6 @@ def face_velocities(mesh):  # TODO: this function could be an error
             mesh.vel_face[idx + 1, 3] = -mesh.vel_face[idx, 1]
 
 
-# @jit(forceobj=True)
 def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable and check top calculations
     if idx < mesh.ygrid:  # Left boundary
         dpx_E = (mesh.pressure[idx + mesh.ygrid * 2] - mesh.pressure[idx]) \
@@ -413,7 +408,6 @@ def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable and che
     return dpx_E, dpx_p, dpx_e, dpy_N, dpy_p, dpy_n
 
 
-# @jit(forceobj=True)
 def pressure_correction_formulation(mesh, uv_relax):  # TODO: MAYBE AN ERROR HERE
     f_e = np.zeros(mesh.num_nodes)
     f_w = np.zeros(mesh.num_nodes)
@@ -496,7 +490,6 @@ def pressure_correction_solver(mesh):
     mesh.pressure_correction = p_correction_solved  # - p_correction_solved[mesh.ygrid + 1]
 
 
-# @jit(forceobj=True)
 def correct_nodal_velocities(mesh, uv_relax):
     for idx in range(mesh.num_nodes):
         if idx < mesh.ygrid:  # Left boundary
@@ -542,7 +535,6 @@ def correct_pressure(mesh, p_relaxation):
     mesh.pressure = mesh.pressure + correction
 
 
-# @jit(forceobj=True)
 def correct_face_velocities(mesh, uv_relax):
     for idx in range(mesh.num_nodes - mesh.ygrid):
         if idx == mesh.num_nodes - 1:  # Top right corner
@@ -639,6 +631,7 @@ def save_all_data(mesh, mass_imbalance, residuals_u, residuals_v):
     np.save('complete_data\\data_{}\\residuals.npy'.format(t), residuals_u, residuals_v, mass_imbalance)
     np.save('complete_data\\data_{}\\pressure_final.npy'.format(t), mesh.pressure)
     np.save('complete_data\\data_{}\\vel_final.npy'.format(t), mesh.vel)
+    return t
 
 
 def visualize(mesh, errs_u, errs_v, errs_p, idx, fig1, ax1, fig2, ax2):  # TODO: MAKE THIS WORK
@@ -688,7 +681,6 @@ def visualize(mesh, errs_u, errs_v, errs_p, idx, fig1, ax1, fig2, ax2):  # TODO:
 
 
 def solution_convergence(mesh, pressure_old, vel_old, err_tols, u_residuals, v_residuals, mass_imb):
-    cvg = False
     pressure_error = np.abs(mesh.pressure - pressure_old)
     vel_error = np.abs(mesh.vel - vel_old)
     u_error = vel_error[:, 0]
@@ -762,9 +754,11 @@ def main():
     p_top = 1
     uv_relax = 0.1
     p_relax = 0.00001
+    reference_node = [25, 25, 0]  # Column, row and value of pressure reference node
 
     max_iter = 3000
     err_tols = 10 ** (-1)
+
 
     object = False
     ## Create boundaries ##
@@ -780,7 +774,7 @@ def main():
     boundary_top_p = Boundary('D', p_top, 'top')
     boundary_right_p = Boundary('N', 0, 'right')
     boundary_bottom_p = Boundary('N', 0, 'bottom')
-    reference_node = [25, 25, 0]  # Column, row and value of pressure reference node
+
     # Boundary set for domain
     boundaries_u = [boundary_left_u, boundary_right_u, boundary_top_u, boundary_bottom_u]
     boundaries_v = [boundary_left_v, boundary_right_v, boundary_top_v, boundary_bottom_v]
@@ -792,8 +786,8 @@ def main():
     mesh1.set_re(reynolds)
     # mesh1.set_reference_node(reference_node)
     mesh1_solved, mass_imbalance, residuals_u, residuals_v = fvm_solver(mesh1, uv_relax, p_relax, max_iter, err_tols)
-    print("DONE")
-    # save_all_data(mesh1_solved, mass_imbalance, residuals_u, residuals_v)
+    # folder = save_all_data(mesh1_solved, mass_imbalance, residuals_u, residuals_v)
+    # print(folder)
 
     ### LID DRIVEN CAVITY WITH STEP PROBLEM ###
     ## Constants and input parameters ##
@@ -801,12 +795,14 @@ def main():
     p_top = 1
     uv_relax = 0.1
     p_relax = 0.00001
+    reference_node = [2, 2, 0]  # Column, row and value of pressure reference node
+
     max_iter = 3000
     err_tols = 10 ** (-1)
 
-    object = True
-    size = 1
-    position = 1
+    obj_size = [1/3, 1/3]
+    obj_position = [0, 0]
+
 
     ## Create boundaries ##
     boundary_left_u = Boundary('D', 0, 'left')
@@ -825,15 +821,16 @@ def main():
     boundaries_u = [boundary_left_u, boundary_right_u, boundary_top_u, boundary_bottom_u]
     boundaries_v = [boundary_left_v, boundary_right_v, boundary_top_v, boundary_bottom_v]
     boundaries_p = [boundary_left_p, boundary_right_p, boundary_top_p, boundary_bottom_p]
-    reference_node = [25, 25, 0]  # Column, row and value of pressure reference node
+
 
     # mesh2 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 320, 320, 1, 1)
     mesh2 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 50, 50, 1, 1)
     mesh2.set_re(reynolds)
-    mesh2.create_object(size, position)
-    mesh2.set_reference_node(reference_node)
-    mesh2_solved, mass_imbalance, residuals_u, residuals_v = fvm_solver(mesh2, uv_relax, p_relax, max_iter, err_tols)
-    # save_all_data(mesh1_solved, mass_imbalance, residuals_u, residuals_v)
+    mesh2.create_object(obj_size, obj_position)
+    # mesh2.set_reference_node(reference_node)
+    mesh2_solved, mass_imbalance2, residuals_u2, residuals_v2 = fvm_solver(mesh2, uv_relax, p_relax, max_iter, err_tols)
+    # folder2 = save_all_data(mesh2_solved2, mass_imbalance2, residuals_u2, residuals_v2)
+    # print(folder2)
 
 
 if __name__ == '__main__':
