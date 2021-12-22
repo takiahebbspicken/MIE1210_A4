@@ -294,20 +294,26 @@ def momentum_formulation(mesh):
         mesh.momentum_pressure_source[idx, 1] = - dpy_p * mesh.volumes[idx]
 
 
-def momentum_solver(mesh):
+def momentum_solver(mesh, uv_relax):
     upper_off_diag = -mesh.a_momentum[0:mesh.num_nodes - mesh.ygrid, 1]
     lower_off_diag = -mesh.a_momentum[mesh.ygrid:, 3]
     diag = mesh.a_momentum[:, 0]
     super_diag = -mesh.a_momentum[0:-1, 2]
     sub_diag = -mesh.a_momentum[1:, 4]
-    diagonals = [diag, super_diag, sub_diag, upper_off_diag, lower_off_diag]
-    a_sparse_matrix = diags(diagonals, [0, 1, -1, mesh.ygrid, -mesh.ygrid], format='csc')
-    b_matrix_u = mesh.momentum_pressure_source[:, 0] + mesh.momentum_source_u[:, 0]
-    b_matrix_v = mesh.momentum_pressure_source[:, 1] + mesh.momentum_source_u[:, 1]
-    u_solved = spsolve(a_sparse_matrix, b_matrix_u)
-    v_solved = spsolve(a_sparse_matrix, b_matrix_v)
-    residual_u = b_matrix_u - a_sparse_matrix * mesh.vel[:, 0]
-    residual_v = b_matrix_v - a_sparse_matrix * mesh.vel[:, 0]
+    b_matrix_u = mesh.momentum_pressure_source[:, 0] + mesh.momentum_source_u[:, 0] #+ ((1 - uv_relax) * diag /
+                                                                                       #u_rlx) * mesh.vel[:, 0]
+    b_matrix_v = mesh.momentum_pressure_source[:, 1] + mesh.momentum_source_u[:, 1] #+ ((1 - uv_relax) * diag /
+                                                                                      # uv_relax) * mesh.vel[:, 1]
+    # diagonals_u = [diag / uv_relax, super_diag, sub_diag, upper_off_diag, lower_off_diag]
+    # diagonals_v = [diag / uv_relax, super_diag, sub_diag, upper_off_diag, lower_off_diag]
+    diagonals_u = [diag, super_diag, sub_diag, upper_off_diag, lower_off_diag]
+    diagonals_v = [diag, super_diag, sub_diag, upper_off_diag, lower_off_diag]
+    a_sparse_matrix_u = diags(diagonals_u, [0, 1, -1, mesh.ygrid, -mesh.ygrid], format='csc')
+    a_sparse_matrix_v = diags(diagonals_v, [0, 1, -1, mesh.ygrid, -mesh.ygrid], format='csc')
+    u_solved = spsolve(a_sparse_matrix_u, b_matrix_u)
+    v_solved = spsolve(a_sparse_matrix_v, b_matrix_v)
+    residual_u = b_matrix_u - a_sparse_matrix_u * mesh.vel[:, 0]
+    residual_v = b_matrix_v - a_sparse_matrix_v * mesh.vel[:, 0]
     mesh.vel[:, 0] = u_solved
     mesh.vel[:, 1] = v_solved
     return residual_u, residual_v
@@ -408,7 +414,7 @@ def pressure_derivatives(mesh, idx):  # TODO: pressure_boundary variable and che
 
 
 # @jit(forceobj=True)
-def pressure_correction_formulation(mesh):  # TODO: MAYBE AN ERROR HERE
+def pressure_correction_formulation(mesh, uv_relax):  # TODO: MAYBE AN ERROR HERE
     f_e = np.zeros(mesh.num_nodes)
     f_w = np.zeros(mesh.num_nodes)
     f_n = np.zeros(mesh.num_nodes)
@@ -420,22 +426,23 @@ def pressure_correction_formulation(mesh):  # TODO: MAYBE AN ERROR HERE
         f_s[idx] = mesh.rhos * mesh.vel_face[idx, 3] * mesh.areas[idx, 1]
         if mesh.a_pressure_boundary[idx, 0] == 1:  # East node is not momentum dirichlet boundary
             mesh.a_pressure[idx, 1] = (mesh.rhos * mesh.areas[idx, 0] ** 2 / 2) * (
-                    1 / mesh.a_momentum[idx + mesh.ygrid, 0] + 1 / mesh.a_momentum[idx, 0])
+                    1 / mesh.a_momentum[idx + mesh.ygrid, 0] + 1 / mesh.a_momentum[idx, 0]) #* uv_relax
         else:
             mesh.a_pressure[idx, 1] = 0
         if mesh.a_pressure_boundary[idx, 1] == 1:
-            mesh.a_pressure[idx, 2] = (mesh.rhos * mesh.areas[idx, 1] ** 2 / 2) * (1 / mesh.a_momentum[idx + 1, 0]
-                                                                                   + 1 / mesh.a_momentum[idx, 0])
+            mesh.a_pressure[idx, 2] = (mesh.rhos * mesh.areas[idx, 1] ** 2 / 2) * \
+                                      (1 / mesh.a_momentum[idx + 1, 0] + 1 / mesh.a_momentum[idx, 0]) \
+                                      #* uv_relax
         else:
             mesh.a_pressure[idx, 2] = 0
         if mesh.a_pressure_boundary[idx, 2] == 1:
             mesh.a_pressure[idx, 3] = (mesh.rhos * mesh.areas[idx, 0] ** 2 / 2) * (
-                    1 / mesh.a_momentum[idx - mesh.ygrid, 0] + 1 / mesh.a_momentum[idx, 0])
+                    1 / mesh.a_momentum[idx - mesh.ygrid, 0] + 1 / mesh.a_momentum[idx, 0]) #* uv_relax
         else:
             mesh.a_pressure[idx, 3] = 0
         if mesh.a_pressure_boundary[idx, 3] == 1:
-            mesh.a_pressure[idx, 4] = (mesh.rhos * mesh.areas[idx, 1] ** 2 / 2) * (1 / mesh.a_momentum[idx - 1, 0]
-                                                                                   + 1 / mesh.a_momentum[idx, 0])
+            mesh.a_pressure[idx, 4] = (mesh.rhos * mesh.areas[idx, 1] ** 2 / 2) * \
+                                      (1 / mesh.a_momentum[idx - 1, 0] + 1 / mesh.a_momentum[idx, 0]) #* uv_relax
         else:
             mesh.a_pressure[idx, 4] = 0
         mesh.pressure_source[idx] = f_w[idx] - f_e[idx] + f_s[idx] - f_n[idx]
@@ -472,10 +479,10 @@ def pressure_correction_solver(mesh):
     b_matrix = mesh.pressure_source[:]
     if mesh.is_ref_node:
         upper_off_diag = np.delete(-mesh.a_pressure[0:mesh.num_nodes - mesh.ygrid, 1], mesh.ref_node, 0)
-        lower_off_diag = np.delete(-mesh.a_pressure[mesh.ygrid:, 3], mesh.ref_node-mesh.ygrid, 0)
+        lower_off_diag = np.delete(-mesh.a_pressure[mesh.ygrid:, 3], mesh.ref_node - mesh.ygrid, 0)
         diag = np.delete(mesh.a_pressure[:, 0], mesh.ref_node, 0)
         super_diag = np.delete(-mesh.a_pressure[0:-1, 2], mesh.ref_node, 0)
-        sub_diag = np.delete(-mesh.a_pressure[1:, 4], mesh.ref_node-1, 0)
+        sub_diag = np.delete(-mesh.a_pressure[1:, 4], mesh.ref_node - 1, 0)
         b_matrix = np.delete(mesh.pressure_source[:] + mesh.ref_pressure_source[:], mesh.ref_node, 0)
     diagonals = [diag, super_diag, sub_diag, upper_off_diag, lower_off_diag]
     a_sparse_matrix = diags(diagonals, [0, 1, -1, mesh.ygrid, -mesh.ygrid], format='csc')
@@ -490,7 +497,7 @@ def pressure_correction_solver(mesh):
 
 
 # @jit(forceobj=True)
-def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):
+def correct_nodal_velocities(mesh, uv_relax):
     for idx in range(mesh.num_nodes):
         if idx < mesh.ygrid:  # Left boundary
             mesh.vel_correction[idx, 0] = 1 / mesh.a_momentum[idx, 0] * \
@@ -521,10 +528,12 @@ def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):
             mesh.vel_correction[idx, 1] = 1 / mesh.a_momentum[idx, 0] * \
                                           (mesh.pressure_correction[idx - 1] - mesh.pressure_correction[idx + 1]) \
                                           / mesh.areas[idx, 0] / 2 * mesh.volumes[idx]
-    mesh.vel[:, 0] += u_relaxation * mesh.vel_correction[:, 0]
-    mesh.vel[:, 1] += v_relaxation * mesh.vel_correction[:, 1]
-    # mesh.vel[:, 0] = mesh.vel[:, 0] / np.max(mesh.vel[:, 0])
-    # mesh.vel[:, 1] = mesh.vel[:, 1] / np.max(mesh.vel[:, 1])
+    # mesh.vel[:, 0] += u_relaxation * mesh.vel_correction[:, 0]
+    # mesh.vel[:, 1] += v_relaxation * mesh.vel_correction[:, 1]
+    mesh.vel[:, 0] = uv_relax * mesh.vel[:, 0] + (1 - uv_relax) * mesh.vel_correction[:, 0]
+    mesh.vel[:, 1] = uv_relax * mesh.vel[:, 1] + (1 - uv_relax) * mesh.vel_correction[:, 1]
+    # mesh.vel[:, 0] += mesh.vel_correction[:, 0]
+    # mesh.vel[:, 1] += mesh.vel_correction[:, 1]
 
 
 def correct_pressure(mesh, p_relaxation):
@@ -534,7 +543,7 @@ def correct_pressure(mesh, p_relaxation):
 
 
 # @jit(forceobj=True)
-def correct_face_velocities(mesh, face_relax):
+def correct_face_velocities(mesh, uv_relax):
     for idx in range(mesh.num_nodes - mesh.ygrid):
         if idx == mesh.num_nodes - 1:  # Top right corner
             continue
@@ -558,14 +567,15 @@ def correct_face_velocities(mesh, face_relax):
             mesh.vel_face_correction[idx + mesh.ygrid, 2] = -mesh.vel_face_correction[idx, 0]
         if idx % mesh.ygrid != (mesh.ygrid - 1):
             mesh.vel_face_correction[idx + 1, 3] = -mesh.vel_face_correction[idx, 1]
-    mesh.vel_face[:, 0] = mesh.vel_face[:, 0] + face_relax * mesh.vel_face_correction[:, 0]
-    mesh.vel_face[:, 1] = mesh.vel_face[:, 1] + face_relax * mesh.vel_face_correction[:, 1]
-    mesh.vel_face[:, 2] = mesh.vel_face[:, 2] + face_relax * mesh.vel_face_correction[:, 2]
-    mesh.vel_face[:, 3] = mesh.vel_face[:, 3] + face_relax * mesh.vel_face_correction[:, 3]
-    # mesh.vel_face[:, 0] = mesh.vel_face[:, 0] / np.max(mesh.vel_face[:, 0])
-    # mesh.vel_face[:, 1] = mesh.vel_face[:, 1] / np.max(mesh.vel_face[:, 1])
-    # mesh.vel_face[:, 2] = mesh.vel_face[:, 2] / np.max(mesh.vel_face[:, 2])
-    # mesh.vel_face[:, 3] = mesh.vel_face[:, 3] / np.max(mesh.vel_face[:, 3])
+    mesh.vel_face[:, 0] = uv_relax * mesh.vel_face[:, 0] + (1 - uv_relax) * mesh.vel_face_correction[:, 0]
+    mesh.vel_face[:, 1] = uv_relax * mesh.vel_face[:, 1] + (1 - uv_relax) * mesh.vel_face_correction[:, 1]
+    mesh.vel_face[:, 2] = uv_relax * mesh.vel_face[:, 2] + (1 - uv_relax) * mesh.vel_face_correction[:, 2]
+    mesh.vel_face[:, 3] = uv_relax * mesh.vel_face[:, 3] + (1 - uv_relax) * mesh.vel_face_correction[:, 3]
+    # mesh.vel_face[:, 0] += mesh.vel_face_correction[:, 0]
+    # mesh.vel_face[:, 1] += mesh.vel_face_correction[:, 1]
+    # mesh.vel_face[:, 2] += mesh.vel_face_correction[:, 2]
+    # mesh.vel_face[:, 3] += mesh.vel_face_correction[:, 3]
+
 
 def pressure_extrapolation(mesh):
     # PRESSURE TO BOUNDARY
@@ -616,7 +626,7 @@ def save_mesh_data(mesh, idx):
     np.save('data_live\\vel_iteration_{}.npy'.format(idx), mesh.vel)
 
 
-def save_all_data():
+def save_all_data(mesh, mass_imbalance, residuals_u, residuals_v):
     t = time.time()
     Path("complete_data\\data_{}".format(t)).mkdir(exist_ok=True)
     Path("complete_plots\\plots_{}".format(t)).mkdir(exist_ok=True)
@@ -624,6 +634,11 @@ def save_all_data():
         shutil.move('data_live\\{}'.format(filename), 'complete_data\\data_{}\\'.format(t))
     for filename in os.listdir('plots_live\\'):
         shutil.move('plots_live\\{}'.format(filename), 'complete_plots\\plots_{}\\'.format(t))
+    np.save('complete_data\\data_{}\\xy_coordinates.npy'.format(t), mesh.x_coordinates, mesh.y_coordiantes)
+    np.save('complete_data\\data_{}\\xy_grid.npy'.format(t), mesh.xgrid, mesh.ygrid)
+    np.save('complete_data\\data_{}\\residuals.npy'.format(t), residuals_u, residuals_v, mass_imbalance)
+    np.save('complete_data\\data_{}\\pressure_final.npy'.format(t), mesh.pressure)
+    np.save('complete_data\\data_{}\\vel_final.npy'.format(t), mesh.vel)
 
 
 def visualize(mesh, errs_u, errs_v, errs_p, idx, fig1, ax1, fig2, ax2):  # TODO: MAKE THIS WORK
@@ -688,7 +703,7 @@ def solution_convergence(mesh, pressure_old, vel_old, err_tols, u_residuals, v_r
     return cvg, err_u, err_v, err_p, err_mass_imbalance
 
 
-def fvm_solver(mesh, u_relax, v_relax, p_relax, face_relax, max_iter, err_tols):
+def fvm_solver(mesh, uv_relax, p_relax, max_iter, err_tols):
     change_u = []
     change_v = []
     change_p = []
@@ -702,19 +717,19 @@ def fvm_solver(mesh, u_relax, v_relax, p_relax, face_relax, max_iter, err_tols):
         cvg = False
         set_boundary_values(mesh)
         momentum_formulation(mesh)
-        residual_u, residual_v = momentum_solver(mesh)
+        residual_u, residual_v = momentum_solver(mesh, uv_relax)
         face_velocities(mesh)
         set_boundary_values(mesh)
         time_solve1 = time.time()
-        pressure_correction_formulation(mesh)
+        pressure_correction_formulation(mesh, uv_relax)
         pressure_correction_solver(mesh)
         time_solve2 = time.time()
         print('Time to solve: ' + str(time_solve2 - time_solve1))
         correct_pressure(mesh, p_relax)
         pressure_extrapolation(mesh)
         set_boundary_values(mesh)
-        correct_nodal_velocities(mesh, u_relax, v_relax)
-        correct_face_velocities(mesh, face_relax)
+        correct_nodal_velocities(mesh, uv_relax)
+        correct_face_velocities(mesh, uv_relax)
 
         # save_mesh_data(mesh, idx2)
         if idx2 >= 1:
@@ -735,6 +750,7 @@ def fvm_solver(mesh, u_relax, v_relax, p_relax, face_relax, max_iter, err_tols):
         pressure_old = np.array(mesh.pressure, copy=True)
         vel_old = np.array(mesh.vel, copy=True)
         t2 = time.time()
+    return mesh, mass_imbalance, residuals_u, residuals_v
         # print('Time to solve: ' + str(t2 - t1))
 
 
@@ -744,10 +760,8 @@ def main():
     reynolds = 100
     u_top = 1
     p_top = 1
-    u_relax = 0.05
-    v_relax = 0.05
-    face_relax = 0.05
-    p_relax = 0.000001
+    uv_relax = 0.1
+    p_relax = 0.00001
 
     max_iter = 3000
     err_tols = 10 ** (-1)
@@ -777,9 +791,9 @@ def main():
     mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 50, 50, 1, 1)
     mesh1.set_re(reynolds)
     # mesh1.set_reference_node(reference_node)
-    fvm_solver(mesh1, u_relax, v_relax, p_relax, face_relax, max_iter, err_tols)
+    mesh_solved, mass_imbalance, residuals_u, residuals_v = fvm_solver(mesh1, uv_relax, p_relax, max_iter, err_tols)
     print("DONE")
-    # save_all_data()
+    # save_all_data(mesh, mass_imbalance, residuals_u, residuals_v)
 
     ### LID DRIVEN CAVITY WITH STEP PROBLEM ###
     ## Constants and input parameters ##
