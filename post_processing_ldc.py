@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 # folder
 t = 1
+save_on = False
 
 # Load data
 xy_coordinates = np.load('complete_data\\data_{}\\xy_coordinates.npy'.format(t))
@@ -41,6 +42,8 @@ ax1.set_ylabel('$y$ [m]', rotation=0)
 ax1.set_title('Pressure Field')
 plt.tight_layout()
 plt.show()
+if save_on:
+    plt.savefig('final_plots\\ldc\\pressure_contour_ldc.pdf')
 
 # U velocity contour:
 fig2, ax2 = plt.subplots(1, 1)
@@ -53,6 +56,8 @@ ax2.set_ylabel('$y$ [m]', rotation=0)
 ax2.set_title('$u$-velocity Field')
 plt.tight_layout()
 plt.show()
+if save_on:
+    plt.savefig('final_plots\\ldc\\uvelocity_contour_ldc.pdf')
 
 #V velocity contour:
 fig3, ax3 = plt.subplots(1, 1)
@@ -65,6 +70,8 @@ ax3.set_ylabel('$y$ [m]', rotation=0)
 ax3.set_title('$v$-velocity Field')
 plt.tight_layout()
 plt.show()
+if save_on:
+    plt.savefig('final_plots\\ldc\\vvelocity_contour_ldc.pdf')
 
 # Combined streamlines and pressure field
 fig4, ax4 = plt.subplots(1, 1)
@@ -79,6 +86,8 @@ plt.tight_layout()
 vel_mag = np.sqrt(u_vel[:, 0] ** 2 + v_vel[:, 1] ** 2).reshape((ygrid, xgrid))
 plt.streamplot(x, y, u_vel, v_vel, density=0.5)  # linewidth=vel_mag / vel_mag.max()
 plt.show()
+if save_on:
+    plt.savefig('final_plots\\ldc\\pressure_velocity_combined_ldc.pdf')
 
 ### VELOCITY PROFILE PLOTS ###
 # u velocity vertical
@@ -92,6 +101,8 @@ ax5.set_title('$u$-velocity profile vertically along center of cavity')
 ax5.legend(handles=[ln1, scatter1])
 plt.tight_layout()
 plt.show()
+if save_on:
+    plt.savefig('final_plots\\ldc\\uvelocity_profile_ldc.pdf')
 
 # v velocity horizontal
 fig6, ax6 = plt.subplots(1, 1)
@@ -104,6 +115,8 @@ ax6.set_title('$v$-velocity profile horizontally along center of cavity')
 ax6.legend(handles=[ln2, scatter2])
 plt.tight_layout()
 plt.show()
+if save_on:
+    plt.savefig('final_plots\\ldc\\vvelocity_profile_ldc.pdf')
 
 ### CONVERGENCE PLOTS ###
 fig7, ax7 = plt.subplots(1, 1)
@@ -111,12 +124,14 @@ x_conv = np.arrange(len(residuals[0, :]))
 residuals_u = residuals[:, 0]
 residuals_v = residuals[:, 1]
 mass_imbalance = residuals[:, 2]
-ln3, = ax6.plot(x_conv, residuals_u, label='$u$-velocity residuals')
-ln4, = ax6.plot(x_conv, residuals_v, label='$v$-velocity residuals')
-ln5, = ax6.plot(x_conv, mass_imbalance, label='Mass imbalance')
+ln3, = ax7.plot(x_conv, residuals_u, label='$u$-velocity residuals')
+ln4, = ax7.plot(x_conv, residuals_v, label='$v$-velocity residuals')
+ln5, = ax7.plot(x_conv, mass_imbalance, label='Mass imbalance')
 ax7.set_xlabel('Iteration')
 ax7.set_ylabel('Residuals', rotation=0)
 ax7.set_title('Residuals over code convergence')
 ax7.legend(handles=[ln3, ln4, ln5])
 plt.tight_layout()
 plt.show()
+if save_on:
+    plt.savefig('final_plots\\ldc\\convergence_ldc.pdf')
