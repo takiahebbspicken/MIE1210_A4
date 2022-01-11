@@ -333,9 +333,9 @@ def face_velocities(mesh):  # TODO: this function could be an error
                                         idx, 0]) * dpy_n
         # Assign w and s face velocities
         if idx < mesh.num_nodes - mesh.ygrid:
-            mesh.vel_face[idx + mesh.ygrid, 2] = -mesh.vel_face[idx, 0]
+            mesh.vel_face[idx + mesh.ygrid, 2] = mesh.vel_face[idx, 0]
         if idx % mesh.ygrid != (mesh.ygrid - 1):
-            mesh.vel_face[idx + 1, 3] = -mesh.vel_face[idx, 1]
+            mesh.vel_face[idx + 1, 3] = mesh.vel_face[idx, 1]
 
 
 # @jit(forceobj=True)
@@ -438,7 +438,7 @@ def pressure_correction_solver(mesh):
     b_matrix = mesh.pressure_source
     p_correction_solved = spsolve(a_sparse_matrix, b_matrix)
     mesh.pressure_correction = p_correction_solved
-    mesh.pressure_correction = mesh.pressure_correction - mesh.pressure_correction[mesh.ygrid + 1]  # TODO probably wrong
+    mesh.pressure_correction = mesh.pressure_correction #- mesh.pressure_correction[mesh.ygrid + 1]  # TODO probably wrong
 
 # @jit(forceobj=True)
 def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):
@@ -477,7 +477,7 @@ def correct_nodal_velocities(mesh, u_relaxation, v_relaxation):
 
 
 def correct_pressure(mesh, p_relaxation):
-    normalized_correct = mesh.pressure_correction  # - mesh.pressure_correction[mesh.ygrid + 1] #TODO change back maybe
+    normalized_correct = mesh.pressure_correction  - mesh.pressure_correction[mesh.ygrid + 1] #TODO change back maybe
     correction = (p_relaxation * normalized_correct).reshape(mesh.num_nodes, 1)
     mesh.pressure = mesh.pressure + correction
 
@@ -497,8 +497,10 @@ def correct_face_velocities(mesh, face_relax):
             mesh.vel_face_correction[idx, 1] = (1/mesh.a_momentum[idx + 1, 0] + 1/mesh.a_momentum[idx, 0]) * \
                                                (mesh.pressure_correction[idx]
                                                 - mesh.pressure_correction[idx + 1]) / 2 * mesh.areas[idx, 1]
-        mesh.vel_face_correction[idx + mesh.ygrid, 2] = -mesh.vel_face_correction[idx, 0]
-        mesh.vel_face_correction[idx + 1, 3] = -mesh.vel_face_correction[idx, 1]
+        if idx < mesh.num_nodes - mesh.ygrid:
+            mesh.vel_face_correction[idx + mesh.ygrid, 2] = mesh.vel_face_correction[idx, 0]
+        if idx % mesh.ygrid != (mesh.ygrid - 1):
+            mesh.vel_face_correction[idx + 1, 3] = mesh.vel_face_correction[idx, 1]
         mesh.vel_face[:, 0] += face_relax * mesh.vel_face_correction[idx, 0]
         mesh.vel_face[:, 1] += face_relax * mesh.vel_face_correction[idx, 1]
         mesh.vel_face[:, 2] += face_relax * mesh.vel_face_correction[idx, 2]
@@ -647,7 +649,7 @@ def fvm_solver(mesh, u_relax, v_relax, p_relax, face_relax, max_iter, err_tols):
             errs_v = np.append(errs_v, err_v)
             errs_p = np.append(errs_p, err_p)
             errs_mass_imbalance = np.append(errs_mass_imbalance, err_mass_imbalance)
-            # visualize(mesh, errs_u, errs_v, errs_p, i)
+            visualize(mesh, errs_u, errs_v, errs_p, i)
         if cvg and i > 10:
             break
         pressure_old = np.array(mesh.pressure, copy=True)
@@ -662,10 +664,10 @@ def main():
     reynolds = 100
     u_top = 1
     p_top = 1
-    u_relax = 0.1
-    v_relax = 0.1
-    p_relax = 0.1
-    face_relax = 0.1
+    u_relax = 0.8
+    v_relax = 0.8
+    p_relax = 0.2
+    face_relax = 0.8
     max_iter = 1000
     err_tols = 10 ** (-1)
 
@@ -689,7 +691,7 @@ def main():
     boundaries_p = [boundary_left_p, boundary_right_p, boundary_top_p, boundary_bottom_p]
 
     # Create Domain
-    mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 40, 40, 1, 1)
+    mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 100, 100, 1, 1)
     mesh1.set_re(reynolds)
     fvm_solver(mesh1, u_relax, v_relax, p_relax, face_relax, max_iter, err_tols)
     print("DONE")
