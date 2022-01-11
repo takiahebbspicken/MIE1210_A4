@@ -701,7 +701,7 @@ def save_all_data(mesh, mass_imbalance, residuals_u, residuals_v):
     return t
 
 
-def visualize(mesh, fig1, ax1, ax2, c_bar):
+def visualize(mesh, fig1, ax1, ax2):
     # Pressure contour with velocity streamlines
     x = mesh.x_coordinates
     y = mesh.y_coordiantes
@@ -769,7 +769,7 @@ def fvm_solver(mesh, uv_relax, p_relax, max_iter, err_tols, visualize_on, save_d
             cvg = solution_convergence(err_tols, residuals_u, residuals_v, mass_imbalance)
         if idx2 % 5 == 0:
             if visualize_on:
-                visualize(mesh, fig1, ax1, ax2, c_bar)
+                visualize(mesh, fig1, ax1, ax2)
             if save_data_on:
                 save_mesh_data(mesh, idx2)
         if cvg and idx2 > 10:

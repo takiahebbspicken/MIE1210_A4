@@ -2,57 +2,13 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 
-# folder
-# t = '1640219560.0399208'  # 50 x 50 grid converged to 10 ** (-5) relative residuals - relaxed momentum
-# t = '1640275577.6607037'  # 50 x 50 with relaxation everywhere (face velocities, pressure, and momentum)
-# t = '1640280653.8671892'  # 50 x 50 no built in relaxation and ref node
-# t = '1640299920.3067224'  # 50 x 50 relaxation everywhere, re = 100, 5000 iterations
-# t = '1640321165.9167898'  # 50 x 50 relaxation everywhere, pressure correction not forced, re = 100, 1000 iterations
-# t = '1640322038.598575'  # 50 x 50 relaxation everywhere, pressure correction not forced, re = 1000, 1000 iterations
-# t = '1640358359.6694262'  # 50 x 50 relaxation everywhere, pressure correction not forced, re = 10000, 5000 iterations
-# t = '1640285013.1029322'  # 50 x 50 relaxation everywhere, re = 1000
-# t = '1640290330.1955945'  # 50 x 50 relaxation everywhere, re = 1000, 5000 iterations
-# t = '1640295480.7346954'  # 50 x 50 relaxation everywhere, re = 1000, 5000 iterations, ref node forced
-# t = '1640233616.657896'   # 129 x 129 grid mostly converged to 10 ** (-5) relative residuals - relaxed momentum
-# t = '1640278582.9075184'   # 129 x 129 with relaxation everywhere (face velocities, pressure, and momentum)
-# t = '1640528895.5574715'  # 129 x 129, only relax momentum
-# t = '1640531966.8940845'  # 129 x 129, only relax momentum, interpolate pressure everywhere (walls not same)
-# t = '1640536680.5994072'  # 129 x 129, only relax momentum, interpolate pressure everywhere (walls not same)
-# t = '1640540184.7086477'  # 129 x 129, only relax momentum, interpolate pressure everywhere (walls not same) re = 1000
-# t = '1640545166.4423673'  # 129 x 129, only relax momentum, interpolate pressure everywhere (walls not same) re = 4000
-# t = "1640555498.1604886"  # 129 x 129, re = 100, no ref pres node, 500 iterations
-# t = 'x'  # 129 x 129, re = 100, no ref pres node, 1000 iterations
-# t = 'xx'  # 129 x 129, re = 100, no ref pres node, 1000 iterations
-# t = '1640572749.8869405'  # 129 x 129 relax internally, reference pressure, re = 100, 1500 iteration
-# t = '1640627749.1793518'  # 129 x 129 relax internally, reference pressure, re = 100, 500 iteration
-# t = '1640623058.6208894'  # 129 x 129 relax internally, reference pressure, re = 1, 500 iteration
-# t = '1640625316.9548628'  # 129 x 129 relax internally, reference pressure, re = 0.1, 500 iteration
-# t = '1640738847.9556124'  # 129 x 129 relax internally, reference pressure, re = 100, 3000 iteration
-# 129 x 129 relax internally, reference pressure, re = 100, 1500 iteration
-t = '1640309920.310112'  # 129 x 129 relaxation everywhere, re = 100, 3000 iterations
-t = '1640319641.7537656'  # 129 x 129 relaxation everywhere, re = 1000, 3000 iterations
-# t = '1640500873.9296625'  # 200 x 200
-# t = '1640268353.1570985'  # 259 x 259 mostly converged to 10 ** (-5) relative residuals - relaxed momentum
-# t = '1640353884.984672'  # 259 x 259 relaxation everywhere, pressure correction not forced, re = 100, 2000 iterations
-# t = '1640489128.3164742'  # 320 x 320 relaxation everywhere, pressure correction not forced, re = 100, 2000 iterations
-# t = '1641915412.4871244'
-# t = '1641917181.1388853'
-# t = '1641920330.0859988'
-
-
 t = '1641937571.7534337'  # 80 x 80
 save_on = False
 
 # Load data
-if t == '1640268353.1570985' or t == '1640278582.9075184' or t == 'xx':
-    residuals = np.loadtxt('complete_data\\data_{}\\residuals.txt'.format(t))
-    residual_u = residuals[:, 0]
-    residual_v = residuals[:, 1]
-    residual_mi = residuals[:, 2]
-else:
-    residual_u = np.load('complete_data\\data_{}\\residual_u.npy'.format(t))
-    residual_v = np.load('complete_data\\data_{}\\residual_v.npy'.format(t))
-    residual_mi = np.load('complete_data\\data_{}\\residual_mi.npy'.format(t))
+residual_u = np.load('complete_data\\data_{}\\residual_u.npy'.format(t))
+residual_v = np.load('complete_data\\data_{}\\residual_v.npy'.format(t))
+residual_mi = np.load('complete_data\\data_{}\\residual_mi.npy'.format(t))
 
 x_coordinates = np.load('complete_data\\data_{}\\x_coordinates.npy'.format(t))
 y_coordinates = np.load('complete_data\\data_{}\\y_coordinates.npy'.format(t))
