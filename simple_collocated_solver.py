@@ -791,8 +791,8 @@ def main():
         err_tols = 10 ** (-40)
 
         ## Solver preferences ##
-        visualize_on = True
-        save_data_on = False
+        visualize_on = False
+        save_data_on = True
 
         ## PROBLEM DEFINITION ##
         ## Create boundaries ##
@@ -817,8 +817,8 @@ def main():
 
         ## Create meshed domain ##
         # mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 257, 257, 1, 1)
-        # mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 129, 129, 1, 1)
-        mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 80, 80, 1, 1)
+        mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 129, 129, 1, 1)
+        # mesh1 = Mesh('2D_uniform', boundaries_u, boundaries_v, boundaries_p, 80, 80, 1, 1)
         # Define space parameters
         mesh1.set_re(reynolds)
         mesh1.set_reference_node(reference_node)
