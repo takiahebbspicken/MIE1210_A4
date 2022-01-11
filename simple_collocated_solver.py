@@ -2,16 +2,13 @@ import time
 import numpy as np
 import os
 import shutil
-import sys
-import scipy
 import matplotlib.pyplot as plt
 import scipy.sparse.linalg as spla
-from numba import jit
+from pathlib import Path
 from scipy import linalg, sparse
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve, gmres
-from pathlib import Path
-from scipy.linalg import solve_banded
+
 
 
 class Boundary:
